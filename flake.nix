@@ -186,55 +186,9 @@
             tool-server = final.openai-proxy;
           };
 
-        # NixOS module for AI inference services
-        nixosModules.default = { config, lib, pkgs, ... }:
-          let
-            cfg = config.services.trtllm-serve;
-          in
-          {
-            options.services.trtllm-serve = {
-              enable = lib.mkEnableOption "TensorRT-LLM inference service";
-
-              openaiProxy = {
-                enable = lib.mkEnableOption "OpenAI-compatible proxy";
-                port = lib.mkOption {
-                  type = lib.types.port;
-                  default = 9000;
-                  description = "Port for OpenAI proxy";
-                };
-                tritonHost = lib.mkOption {
-                  type = lib.types.str;
-                  default = "localhost";
-                  description = "Triton server hostname";
-                };
-                tritonPort = lib.mkOption {
-                  type = lib.types.port;
-                  default = 8001;
-                  description = "Triton gRPC port";
-                };
-              };
-            };
-
-            config = lib.mkIf cfg.enable {
-              systemd.services.openai-proxy = lib.mkIf cfg.openaiProxy.enable {
-                description = "OpenAI-compatible proxy for TensorRT-LLM";
-                wantedBy = [ "multi-user.target" ];
-                after = [ "network.target" ];
-
-                environment = {
-                  TRITON_HOST = cfg.openaiProxy.tritonHost;
-                  TRITON_PORT = toString cfg.openaiProxy.tritonPort;
-                  PORT = toString cfg.openaiProxy.port;
-                };
-
-                serviceConfig = {
-                  ExecStart = "${pkgs.openai-proxy}/bin/openai-proxy-hs";
-                  Restart = "always";
-                  RestartSec = 5;
-                };
-              };
-            };
-          };
+        # NixOS module for TensorRT-LLM inference
+        nixosModules.default = ./nix/modules/trtllm-serve.nix;
+        nixosModules.trtllm-serve = ./nix/modules/trtllm-serve.nix;
       };
     };
 }

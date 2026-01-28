@@ -1,5 +1,5 @@
 {
-  description = "// weyl // trtllm-serve // TensorRT-LLM inference stack";
+  description = "// straylight // triton-tensorrt-llm // TensorRT-LLM inference on Triton";
 
   nixConfig = {
     extra-substituters = [
@@ -23,7 +23,7 @@
 
     # NVIDIA SDK provides CUDA, cuDNN, NCCL, TensorRT, Triton
     nvidia-sdk = {
-      url = "github:weyl-ai/nvidia-sdk";
+      url = "github:straylight-software/nvidia-sdk";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
@@ -65,11 +65,12 @@
         in
         {
           packages = {
-            default = pkgs'.openai-proxy;
+            default = pkgs'.tool-server;
 
-            # Haskell AI Gateway (OpenAI proxy + tools + metrics)
+            # Haskell servers
             inherit (pkgs')
-              openai-proxy
+              openai-proxy     # OpenAI proxy for TRT-LLM
+              tool-server      # Servant API with OpenAPI3
               trtllm-validate
               ;
 
@@ -111,16 +112,24 @@
               packages = [
                 pkgs'.tritonserver-trtllm
                 pkgs'.openai-proxy
+                pkgs'.tool-server
                 pkgs'.trtllm-validate
                 pkgs'.openmpi
                 pkgs'.prrte
                 pkgs'.python312
+                # Language Coset compilers (for tool-server)
+                pkgs'.rustc
+                pkgs'.ghc
+                pkgs'.dhall
               ];
               shellHook = ''
-                echo "trtllm-serve — TensorRT-LLM inference stack"
+                echo "triton-tensorrt-llm — TensorRT-LLM inference on Triton"
+                echo ""
+                echo "Servers:"
+                echo "  openai-proxy     — OpenAI-compatible proxy for TRT-LLM"
+                echo "  tool-server      — Servant API with OpenAPI3 (code sandbox + attestation)"
                 echo ""
                 echo "Tools:"
-                echo "  openai-proxy     — Haskell AI Gateway (OpenAI proxy + tools)"
                 echo "  trtllm-validate  — TRT-LLM engine validation"
                 echo "  tritonserver     — NVIDIA Triton Inference Server"
                 echo ""
@@ -144,7 +153,13 @@
             openai-proxy = {
               type = "app";
               program = "${pkgs'.openai-proxy}/bin/openai-proxy-hs";
-              meta.description = "Haskell AI Gateway: OpenAI proxy + tools + metrics";
+              meta.description = "OpenAI-compatible proxy for TRT-LLM";
+            };
+
+            tool-server = {
+              type = "app";
+              program = "${pkgs'.tool-server}/bin/tool-server";
+              meta.description = "Servant API with OpenAPI3: code sandbox + attestation";
             };
 
             trtllm-validate = {
@@ -165,9 +180,28 @@
         overlays.default =
           final: prev:
           {
-            # Haskell packages
+            # ════════════════════════════════════════════════════════════════════
+            # Haskell servers
+            # ════════════════════════════════════════════════════════════════════
+            
+            # OpenAI-compatible proxy for TRT-LLM (Warp-based)
             openai-proxy = final.callPackage ./nix/openai-proxy.nix { };
+            
+            # Servant API with OpenAPI3 (code sandbox + attestation)
+            tool-server = final.callPackage ./nix/tool-server.nix {
+              inherit (final) ast-grep git openssh gnupg;
+              inherit (final) rustc ghc dhall;
+              # lean4 and purescript may need special handling
+              lean4 = final.elan or final.lean4 or null;
+              purescript = final.purescript or null;
+            };
+            
+            # TRT-LLM validation CLI
             trtllm-validate = final.haskellPackages.callPackage ./nix/trtllm-validate.nix { };
+
+            # ════════════════════════════════════════════════════════════════════
+            # TRT-LLM infrastructure
+            # ════════════════════════════════════════════════════════════════════
 
             # TRT-LLM engine building infrastructure (function set, not a package)
             trtllm-engine = final.callPackage ./nix/trtllm-engine.nix {
@@ -181,14 +215,11 @@
               tritonserver-trtllm = final.tritonserver-trtllm;
               cuda = final.cuda;
             } // args);
-
-            # Convenience aliases
-            tool-server = final.openai-proxy;
           };
 
-        # NixOS module for TensorRT-LLM inference
-        nixosModules.default = ./nix/modules/trtllm-serve.nix;
-        nixosModules.trtllm-serve = ./nix/modules/trtllm-serve.nix;
+        # NixOS module for TensorRT-LLM inference on Triton
+        nixosModules.default = ./nix/modules/triton-trtllm.nix;
+        nixosModules.triton-trtllm = ./nix/modules/triton-trtllm.nix;
       };
     };
 }

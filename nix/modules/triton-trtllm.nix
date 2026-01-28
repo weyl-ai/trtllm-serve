@@ -1,31 +1,75 @@
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#                                              // trtllm-serve NixOS Module
+#                                         // triton-tensorrt-llm NixOS Module
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #
-# TensorRT-LLM inference stack for NixOS.
+# Self-contained TensorRT-LLM inference on Triton for NixOS.
 #
 # Services:
-#   - tritonserver: NVIDIA Triton with TRT-LLM backend
-#   - openai-proxy: Haskell AI Gateway (OpenAI-compatible API)
-#   - searxng: Privacy-respecting metasearch (optional)
+#   - triton: NVIDIA Triton with TRT-LLM backend
+#   - openai-proxy: Haskell OpenAI-compatible API
+#   - tool-server: Servant API with code sandbox + attestation
+#   - searxng: Privacy-respecting metasearch (native, no Docker)
 #
 # Usage:
-#   services.trtllm-serve = {
-#     enable = true;
-#     model = "qwen3-32b";
-#     enginePath = "/var/lib/trtllm/engines/qwen3";
-#   };
+#   {
+#     inputs.triton-tensorrt-llm.url = "github:straylight-software/triton-tensorrt-llm";
+#     
+#     nixosConfigurations.myhost = nixpkgs.lib.nixosSystem {
+#       modules = [
+#         { nixpkgs.overlays = [ triton-tensorrt-llm.overlays.default ]; }
+#         triton-tensorrt-llm.nixosModules.default
+#         {
+#           services.triton-trtllm = {
+#             enable = true;
+#             model = "qwen3-32b";
+#             enginePath = /var/lib/trtllm/engines/qwen3;
+#           };
+#         }
+#       ];
+#     };
+#   }
+#
+# The module pulls packages from the overlay. Apply overlays.default first.
 #
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 { config, lib, pkgs, ... }:
 
 let
-  cfg = config.services.trtllm-serve;
+  cfg = config.services.triton-trtllm;
 in
 {
-  options.services.trtllm-serve = {
+  options.services.triton-trtllm = {
     enable = lib.mkEnableOption "TensorRT-LLM inference service";
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # Package Overrides
+    # ──────────────────────────────────────────────────────────────────────────
+    # These default to packages from the overlay. If the overlay isn't applied,
+    # users must set these explicitly.
+
+    package = {
+      tritonserver = lib.mkOption {
+        type = lib.types.package;
+        default = pkgs.tritonserver-trtllm;
+        defaultText = lib.literalExpression "pkgs.tritonserver-trtllm";
+        description = "Triton server package with TRT-LLM backend";
+      };
+
+      openaiProxy = lib.mkOption {
+        type = lib.types.package;
+        default = pkgs.openai-proxy;
+        defaultText = lib.literalExpression "pkgs.openai-proxy";
+        description = "OpenAI proxy package (Haskell/Warp)";
+      };
+
+      toolServer = lib.mkOption {
+        type = lib.types.package;
+        default = pkgs.tool-server;
+        defaultText = lib.literalExpression "pkgs.tool-server";
+        description = "Tool server package (Servant + OpenAPI3)";
+      };
+    };
 
     # ──────────────────────────────────────────────────────────────────────────
     # Model Configuration
@@ -34,7 +78,7 @@ in
     model = lib.mkOption {
       type = lib.types.str;
       default = "qwen3";
-      description = "Model name for identification";
+      description = "Model name for identification and service naming";
     };
 
     enginePath = lib.mkOption {
@@ -91,7 +135,7 @@ in
     };
 
     # ──────────────────────────────────────────────────────────────────────────
-    # OpenAI Proxy (Haskell AI Gateway)
+    # OpenAI Proxy
     # ──────────────────────────────────────────────────────────────────────────
 
     openaiProxy = {
@@ -115,14 +159,44 @@ in
     };
 
     # ──────────────────────────────────────────────────────────────────────────
-    # SearXNG (Web Search)
+    # Tool Server (Servant + OpenAPI3)
+    # ──────────────────────────────────────────────────────────────────────────
+
+    toolServer = {
+      enable = lib.mkOption {
+        type = lib.types.bool;
+        default = false;
+        description = "Enable Tool Server (code sandbox, attestation)";
+      };
+
+      port = lib.mkOption {
+        type = lib.types.port;
+        default = 9001;
+        description = "Port for Tool Server API";
+      };
+
+      identityDir = lib.mkOption {
+        type = lib.types.nullOr lib.types.path;
+        default = null;
+        description = "Path to identity directory (for attestation signing)";
+      };
+
+      attestationDir = lib.mkOption {
+        type = lib.types.nullOr lib.types.path;
+        default = null;
+        description = "Path to attestation git repository";
+      };
+    };
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # SearXNG (Native - no Docker required)
     # ──────────────────────────────────────────────────────────────────────────
 
     searxng = {
       enable = lib.mkOption {
         type = lib.types.bool;
         default = false;
-        description = "Enable SearXNG metasearch for tool use";
+        description = "Enable SearXNG metasearch for /tools/search";
       };
 
       port = lib.mkOption {
@@ -131,15 +205,15 @@ in
         description = "Port for SearXNG";
       };
 
-      imageDigest = lib.mkOption {
-        type = lib.types.str;
-        default = "sha256:5c8621cef49a936244cbcb432e0ca99b040efd43c580782dd8449bc0015f02e7";
-        description = "SHA256 digest of SearXNG image";
+      secretKeyFile = lib.mkOption {
+        type = lib.types.nullOr lib.types.path;
+        default = null;
+        description = "File containing SearXNG secret key (generated if null)";
       };
     };
 
     # ──────────────────────────────────────────────────────────────────────────
-    # User/Group
+    # User/Group/Paths
     # ──────────────────────────────────────────────────────────────────────────
 
     user = lib.mkOption {
@@ -161,10 +235,14 @@ in
     };
   };
 
+  # ════════════════════════════════════════════════════════════════════════════
+  # Implementation
+  # ════════════════════════════════════════════════════════════════════════════
+
   config = lib.mkIf cfg.enable {
 
     # ──────────────────────────────────────────────────────────────────────────
-    # Users
+    # Users & Groups
     # ──────────────────────────────────────────────────────────────────────────
 
     users.users.${cfg.user} = lib.mkIf (cfg.user == "trtllm") {
@@ -183,13 +261,14 @@ in
     systemd.tmpfiles.rules = [
       "d ${cfg.dataDir} 0755 ${cfg.user} ${cfg.group} -"
       "d ${cfg.dataDir}/huggingface 0755 ${cfg.user} ${cfg.group} -"
+      "d ${cfg.dataDir}/workspaces 0755 ${cfg.user} ${cfg.group} -"
     ];
 
     # ──────────────────────────────────────────────────────────────────────────
     # Triton Server
     # ──────────────────────────────────────────────────────────────────────────
 
-    systemd.services."triton-${cfg.model}" = lib.mkIf cfg.triton.enable {
+    systemd.services."trtllm-triton-${cfg.model}" = lib.mkIf cfg.triton.enable {
       description = "Triton TensorRT-LLM Server (${cfg.model})";
       wantedBy = [ "multi-user.target" ];
       after = [ "network.target" "nvidia-persistenced.service" ];
@@ -200,20 +279,26 @@ in
         HF_HOME = "${cfg.dataDir}/huggingface";
         TRTLLM_ENGINE_PATH = toString cfg.enginePath;
         TRTLLM_TOKENIZER_PATH = toString (if cfg.tokenizerPath != null then cfg.tokenizerPath else cfg.enginePath);
-        XDG_RUNTIME_DIR = "/run/triton-${cfg.model}";
-        TMPDIR = "/run/triton-${cfg.model}";
+        XDG_RUNTIME_DIR = "/run/trtllm-triton-${cfg.model}";
+        TMPDIR = "/run/trtllm-triton-${cfg.model}";
       };
 
       serviceConfig = {
         Type = "simple";
-        ExecStart = "${pkgs.tritonserver-trtllm}/bin/tritonserver-${cfg.model}";
+        ExecStart = lib.concatStringsSep " " ([
+          "${cfg.package.tritonserver}/bin/tritonserver"
+          "--model-repository=${cfg.enginePath}"
+          "--http-port=${toString cfg.triton.httpPort}"
+          "--grpc-port=${toString cfg.triton.grpcPort}"
+          "--metrics-port=${toString cfg.triton.metricsPort}"
+        ] ++ cfg.triton.extraArgs);
         Restart = "on-failure";
         RestartSec = "10s";
 
         User = cfg.user;
         Group = cfg.group;
 
-        RuntimeDirectory = "triton-${cfg.model}";
+        RuntimeDirectory = "trtllm-triton-${cfg.model}";
         RuntimeDirectoryMode = "0755";
 
         PrivateTmp = false;
@@ -226,11 +311,13 @@ in
     # OpenAI Proxy
     # ──────────────────────────────────────────────────────────────────────────
 
-    systemd.services."openai-proxy-${cfg.model}" = lib.mkIf cfg.openaiProxy.enable {
+    systemd.services."trtllm-openai-proxy-${cfg.model}" = lib.mkIf cfg.openaiProxy.enable {
       description = "OpenAI Proxy for ${cfg.model} (Haskell/Warp)";
       wantedBy = [ "multi-user.target" ];
-      after = [ "triton-${cfg.model}.service" "network.target" ];
-      wants = [ "triton-${cfg.model}.service" ];
+      after = [ "trtllm-triton-${cfg.model}.service" "network.target" ]
+        ++ lib.optional cfg.searxng.enable "searx.service";
+      wants = [ "trtllm-triton-${cfg.model}.service" ]
+        ++ lib.optional cfg.searxng.enable "searx.service";
 
       environment = {
         HOME = cfg.dataDir;
@@ -244,11 +331,11 @@ in
 
       serviceConfig = {
         Type = "simple";
-        ExecStart = "${pkgs.openai-proxy}/bin/openai-proxy-hs";
+        ExecStart = "${cfg.package.openaiProxy}/bin/openai-proxy-hs";
         Restart = "on-failure";
         RestartSec = "5s";
 
-        # Wait for Triton
+        # Wait for Triton to be ready
         ExecStartPre = "${pkgs.writeShellScript "wait-for-triton" ''
           for i in $(seq 1 60); do
             if ${pkgs.curl}/bin/curl -sf http://localhost:${toString cfg.triton.httpPort}/v2/health/ready > /dev/null 2>&1; then
@@ -273,56 +360,128 @@ in
     };
 
     # ──────────────────────────────────────────────────────────────────────────
-    # SearXNG
+    # Tool Server
     # ──────────────────────────────────────────────────────────────────────────
 
-    virtualisation.oci-containers.containers.searxng = lib.mkIf cfg.searxng.enable {
-      image = "searxng/searxng@${cfg.searxng.imageDigest}";
-      ports = [ "${toString cfg.searxng.port}:8080" ];
+    systemd.services."trtllm-tool-server" = lib.mkIf cfg.toolServer.enable {
+      description = "Tool Server (Servant + OpenAPI3)";
+      wantedBy = [ "multi-user.target" ];
+      after = [ "network.target" ]
+        ++ lib.optional cfg.searxng.enable "searx.service";
+      wants = lib.optional cfg.searxng.enable "searx.service";
 
       environment = {
-        SEARXNG_BASE_URL = "http://localhost:${toString cfg.searxng.port}";
+        HOME = cfg.dataDir;
+        TOOL_SERVER_PORT = toString cfg.toolServer.port;
+      } // lib.optionalAttrs cfg.searxng.enable {
+        SEARXNG_URL = "http://localhost:${toString cfg.searxng.port}";
+      } // lib.optionalAttrs (cfg.toolServer.identityDir != null) {
+        IDENTITY_DIR = toString cfg.toolServer.identityDir;
+      } // lib.optionalAttrs (cfg.toolServer.attestationDir != null) {
+        ATTESTATION_DIR = toString cfg.toolServer.attestationDir;
       };
 
-      volumes = [
-        "${cfg.dataDir}/searxng:/etc/searxng:rw"
-      ];
+      serviceConfig = {
+        Type = "simple";
+        ExecStart = "${cfg.package.toolServer}/bin/tool-server";
+        Restart = "on-failure";
+        RestartSec = "5s";
+
+        User = cfg.user;
+        Group = cfg.group;
+
+        NoNewPrivileges = true;
+        PrivateTmp = true;
+        ProtectSystem = "strict";
+        ProtectHome = "read-only";
+        ReadWritePaths = [ cfg.dataDir "${cfg.dataDir}/workspaces" ]
+          ++ lib.optional (cfg.toolServer.attestationDir != null) (toString cfg.toolServer.attestationDir);
+      };
     };
 
-    systemd.tmpfiles.rules = lib.mkIf cfg.searxng.enable [
-      "d ${cfg.dataDir}/searxng 0700 root root -"
-    ];
+    # ──────────────────────────────────────────────────────────────────────────
+    # SearXNG (uses nixpkgs services.searx - no Docker)
+    # ──────────────────────────────────────────────────────────────────────────
+
+    services.searx = lib.mkIf cfg.searxng.enable {
+      enable = true;
+      
+      settings = {
+        server = {
+          port = cfg.searxng.port;
+          bind_address = "127.0.0.1";
+          secret_key = if cfg.searxng.secretKeyFile != null 
+            then "@SEARX_SECRET_KEY@"  # Will be replaced
+            else "triton-trtllm-default-key-change-me";
+        };
+        
+        search = {
+          safe_search = 0;
+          autocomplete = "google";
+          default_lang = "en";
+        };
+        
+        engines = lib.mapAttrsToList (name: enabled: { inherit name; engine = name; disabled = !enabled; }) {
+          google = true;
+          duckduckgo = true;
+          bing = true;
+          github = true;
+          stackoverflow = true;
+          wikipedia = true;
+          arxiv = true;
+        };
+        
+        outgoing = {
+          request_timeout = 5.0;
+          useragent_suffix = "triton-trtllm";
+        };
+      };
+      
+      runInUwsgi = true;
+      uwsgiConfig = {
+        http = "127.0.0.1:${toString cfg.searxng.port}";
+      };
+    };
 
     # ──────────────────────────────────────────────────────────────────────────
     # Firewall
     # ──────────────────────────────────────────────────────────────────────────
 
-    networking.firewall.allowedTCPPorts = lib.mkIf cfg.openaiProxy.enable [
-      cfg.openaiProxy.port
-    ];
+    networking.firewall.allowedTCPPorts = 
+      lib.optional cfg.openaiProxy.enable cfg.openaiProxy.port
+      ++ lib.optional cfg.toolServer.enable cfg.toolServer.port;
 
     # ──────────────────────────────────────────────────────────────────────────
-    # Info
+    # Info File
     # ──────────────────────────────────────────────────────────────────────────
 
-    environment.etc."trtllm-serve/endpoints".text = ''
+    environment.etc."triton-trtllm/info".text = ''
       TensorRT-LLM Serve: ${cfg.model}
       ════════════════════════════════════════════════════════════════
 
-      Triton:
+      ${lib.optionalString cfg.triton.enable ''
+      Triton Server:
         HTTP:    http://localhost:${toString cfg.triton.httpPort}
         gRPC:    localhost:${toString cfg.triton.grpcPort}
         Metrics: http://localhost:${toString cfg.triton.metricsPort}/metrics
-
-      OpenAI API:
+        Health:  http://localhost:${toString cfg.triton.httpPort}/v2/health/ready
+      ''}
+      ${lib.optionalString cfg.openaiProxy.enable ''
+      OpenAI Proxy:
         Base:    http://localhost:${toString cfg.openaiProxy.port}/v1
         Chat:    http://localhost:${toString cfg.openaiProxy.port}/v1/chat/completions
         Models:  http://localhost:${toString cfg.openaiProxy.port}/v1/models
         Health:  http://localhost:${toString cfg.openaiProxy.port}/health
-
+      ''}
+      ${lib.optionalString cfg.toolServer.enable ''
+      Tool Server:
+        Base:    http://localhost:${toString cfg.toolServer.port}
+        OpenAPI: http://localhost:${toString cfg.toolServer.port}/openapi.json
+        Health:  http://localhost:${toString cfg.toolServer.port}/health
+      ''}
       ${lib.optionalString cfg.searxng.enable ''
       SearXNG:
-        Web:     http://localhost:${toString cfg.searxng.port}
+        Search:  http://localhost:${toString cfg.searxng.port}
       ''}
     '';
   };

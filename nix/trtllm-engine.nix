@@ -36,6 +36,9 @@
   openmpi,
   tritonserver-trtllm,
   cuda,
+  cudnn,
+  nccl,
+  tensorrt,
   trtllm-validate,
 }:
 
@@ -53,10 +56,13 @@ let
   };
 
   # Environment setup for TRT-LLM commands
+  # Must match the working devShell environment from nvidia-sdk
   envSetup = ''
     export PYTHONPATH="${triton}/python''${PYTHONPATH:+:$PYTHONPATH}"
-    export LD_LIBRARY_PATH="/run/opengl-driver/lib:${triton}/lib:${triton}/tensorrt_llm/lib:${cuda}/lib64:${openmpi}/lib:${python}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    export LD_LIBRARY_PATH="/run/opengl-driver/lib:${triton}/lib:${triton}/python/tensorrt_llm/libs:${cuda}/lib64:${cudnn}/lib:${nccl}/lib:${tensorrt}/lib:${openmpi}/lib:${python}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
     export CUDA_HOME="${cuda}"
+    # NixOS: Triton JIT compiler needs this to find libcuda.so
+    export TRITON_LIBCUDA_PATH="/run/opengl-driver/lib"
     export HOME="$TMPDIR/home"
     export HF_HOME="$TMPDIR/hf_cache"
     export TLLM_LOG_LEVEL="WARNING"

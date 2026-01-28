@@ -18,14 +18,12 @@
   };
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-parts.url = "github:hercules-ci/flake-parts";
 
     # NVIDIA SDK provides CUDA, cuDNN, NCCL, TensorRT, Triton
-    nvidia-sdk = {
-      url = "github:weyl-ai/nvidia-sdk";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
+    # Follow nvidia-sdk's nixpkgs to ensure cache hits
+    nvidia-sdk.url = "github:weyl-ai/nvidia-sdk";
+    nixpkgs.follows = "nvidia-sdk/nixpkgs";
   };
 
   outputs =
@@ -86,6 +84,10 @@
               cudnn
               nccl
               tensorrt
+              # TRT-LLM Python wrappers
+              trtllm-python
+              trtllm-build
+              trtllm-env
               ;
 
             # ════════════════════════════════════════════════════════════════════
@@ -109,6 +111,20 @@
               httpPort = 8000;
               grpcPort = 8001;
               metricsPort = 8002;
+            };
+
+            # ════════════════════════════════════════════════════════════════════
+            # Nemotron-Nano-9B engine (small, fast)
+            # Build with: nix build .#nemotron-nano-engine --option sandbox false
+            # ════════════════════════════════════════════════════════════════════
+            nemotron-nano-engine = pkgs'.trtllm-engine.mkEngine {
+              name = "nemotron-nano-9b";
+              hfModel = "nvidia/NVIDIA-Nemotron-Nano-9B-v2-NVFP4";
+              quantization = "NVFP4";
+              maxBatchSize = 8;
+              maxSeqLen = 8192;
+              maxNumTokens = 4096;
+              tensorParallelSize = 1;
             };
           };
 
@@ -143,6 +159,8 @@
                 export PYTHONPATH="${pkgs'.tritonserver-trtllm}/python''${PYTHONPATH:+:$PYTHONPATH}"
                 export LD_LIBRARY_PATH="/run/opengl-driver/lib:${pkgs'.tritonserver-trtllm}/lib:${pkgs'.tritonserver-trtllm}/python/tensorrt_llm/libs:${pkgs'.cuda}/lib64:${pkgs'.cudnn}/lib:${pkgs'.nccl}/lib:${pkgs'.tensorrt}/lib:${pkgs'.openmpi}/lib:${pkgs'.python312}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
                 export CUDA_HOME="${pkgs'.cuda}"
+                # NixOS: Triton JIT compiler needs this to find libcuda.so
+                export TRITON_LIBCUDA_PATH="/run/opengl-driver/lib"
               '';
             };
           };
@@ -190,6 +208,26 @@
               program = "${pkgs'.tritonserver-trtllm}/bin/tritonserver";
               meta.description = "NVIDIA Triton Inference Server with TRT-LLM backend";
             };
+
+            # TRT-LLM Python environment
+            trtllm-python = {
+              type = "app";
+              program = "${pkgs'.trtllm-python}/bin/python";
+              meta.description = "Python with TensorRT-LLM environment";
+            };
+
+            trtllm-build = {
+              type = "app";
+              program = "${pkgs'.trtllm-build}/bin/trtllm-build";
+              meta.description = "TensorRT-LLM engine build command";
+            };
+
+            # Quick start: load Qwen3-32B and chat
+            qwen3 = {
+              type = "app";
+              program = "${pkgs'.qwen3-chat}/bin/qwen3-chat";
+              meta.description = "Chat with Qwen3-32B-NVFP4";
+            };
           };
         };
 
@@ -221,8 +259,71 @@
             trtllm-engine = final.callPackage ./nix/trtllm-engine.nix {
               tritonserver-trtllm = final.tritonserver-trtllm;
               cuda = final.cuda;
+              cudnn = final.cudnn;
+              nccl = final.nccl;
+              tensorrt = final.tensorrt;
               trtllm-validate = final.trtllm-validate;
             };
+
+            # ════════════════════════════════════════════════════════════════════
+            # TRT-LLM Python environment wrappers
+            # ════════════════════════════════════════════════════════════════════
+            
+            # Python with TensorRT-LLM environment
+            # Usage: nix run .#trtllm-python -- -c "from tensorrt_llm import LLM; print('ok')"
+            trtllm-python = final.writeShellScriptBin "python" ''
+              export PYTHONPATH="${final.tritonserver-trtllm}/python''${PYTHONPATH:+:$PYTHONPATH}"
+              export LD_LIBRARY_PATH="/run/opengl-driver/lib:${final.tritonserver-trtllm}/lib:${final.tritonserver-trtllm}/python/tensorrt_llm/libs:${final.cuda}/lib64:${final.cudnn}/lib:${final.nccl}/lib:${final.tensorrt}/lib:${final.openmpi}/lib:${final.python312}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+              export CUDA_HOME="${final.cuda}"
+              # NixOS: Triton JIT compiler needs this to find libcuda.so
+              export TRITON_LIBCUDA_PATH="/run/opengl-driver/lib"
+              exec ${final.python312}/bin/python "$@"
+            '';
+
+            # TRT-LLM build command wrapper
+            trtllm-build = final.writeShellScriptBin "trtllm-build" ''
+              export PYTHONPATH="${final.tritonserver-trtllm}/python''${PYTHONPATH:+:$PYTHONPATH}"
+              export LD_LIBRARY_PATH="/run/opengl-driver/lib:${final.tritonserver-trtllm}/lib:${final.tritonserver-trtllm}/python/tensorrt_llm/libs:${final.cuda}/lib64:${final.cudnn}/lib:${final.nccl}/lib:${final.tensorrt}/lib:${final.openmpi}/lib:${final.python312}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+              export CUDA_HOME="${final.cuda}"
+              # NixOS: Triton JIT compiler needs this to find libcuda.so
+              export TRITON_LIBCUDA_PATH="/run/opengl-driver/lib"
+              exec ${final.python312}/bin/python -m tensorrt_llm.commands.build "$@"
+            '';
+
+            # Full TRT-LLM development environment
+            trtllm-env = final.buildEnv {
+              name = "trtllm-env";
+              paths = [
+                final.trtllm-python
+                final.trtllm-build
+                final.tritonserver-trtllm
+                final.openmpi
+                final.prrte
+              ];
+            };
+
+            # Quick start: chat with Qwen3-32B
+            qwen3-chat = final.writeShellScriptBin "qwen3-chat" ''
+              export PYTHONPATH="${final.tritonserver-trtllm}/python''${PYTHONPATH:+:$PYTHONPATH}"
+              export LD_LIBRARY_PATH="/run/opengl-driver/lib:${final.tritonserver-trtllm}/lib:${final.tritonserver-trtllm}/python/tensorrt_llm/libs:${final.cuda}/lib64:${final.cudnn}/lib:${final.nccl}/lib:${final.tensorrt}/lib:${final.openmpi}/lib:${final.python312}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+              export CUDA_HOME="${final.cuda}"
+              export TRITON_LIBCUDA_PATH="/run/opengl-driver/lib"
+              exec ${final.python312}/bin/python -c "
+from tensorrt_llm import LLM, SamplingParams
+print('Loading Qwen3-32B-NVFP4...')
+llm = LLM(model='nvidia/Qwen3-32B-NVFP4', tensor_parallel_size=1)
+print('Ready. Type your message (Ctrl+D to exit):')
+sampling = SamplingParams(max_tokens=256)
+while True:
+    try:
+        prompt = input('> ')
+        if not prompt.strip(): continue
+        out = llm.generate([prompt], sampling)[0].outputs[0].text
+        print(out)
+    except EOFError:
+        break
+"
+            '';
 
             # TRT-LLM Serve (PyTorch backend with speculative decoding)
             mkTrtllmServe = args: final.callPackage ./nix/trtllm-serve.nix ({

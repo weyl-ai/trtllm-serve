@@ -16,7 +16,7 @@ haskellPackages.mkDerivation {
   pname = "trtllm-validate";
   version = "0.1.0";
   
-  src = ./trtllm-validate;
+  src = ../trtllm-validate;
   
   isLibrary = false;
   isExecutable = true;

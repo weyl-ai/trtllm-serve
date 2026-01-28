@@ -20,10 +20,10 @@
 }:
 
 haskellPackages.mkDerivation {
-  pname = "openai-proxy-hs";
+  pname = "openai-proxy";
   version = "0.1.0";
   
-  src = ./openai-proxy-hs;
+  src = ../openai-proxy;
   
   isLibrary = true;
   isExecutable = true;

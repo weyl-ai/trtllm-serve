@@ -65,11 +65,11 @@
         in
         {
           packages = {
-            default = pkgs'.openai-proxy-hs;
+            default = pkgs'.openai-proxy;
 
             # Haskell AI Gateway (OpenAI proxy + tools + metrics)
             inherit (pkgs')
-              openai-proxy-hs
+              openai-proxy
               trtllm-validate
               ;
 
@@ -110,7 +110,7 @@
             default = pkgs'.mkShell {
               packages = [
                 pkgs'.tritonserver-trtllm
-                pkgs'.openai-proxy-hs
+                pkgs'.openai-proxy
                 pkgs'.trtllm-validate
                 pkgs'.openmpi
                 pkgs'.prrte
@@ -120,7 +120,7 @@
                 echo "trtllm-serve — TensorRT-LLM inference stack"
                 echo ""
                 echo "Tools:"
-                echo "  openai-proxy-hs  — Haskell AI Gateway (OpenAI proxy + tools)"
+                echo "  openai-proxy     — Haskell AI Gateway (OpenAI proxy + tools)"
                 echo "  trtllm-validate  — TRT-LLM engine validation"
                 echo "  tritonserver     — NVIDIA Triton Inference Server"
                 echo ""
@@ -137,13 +137,13 @@
             # Unified AI Gateway
             default = {
               type = "app";
-              program = "${pkgs'.openai-proxy-hs}/bin/openai-proxy-hs";
+              program = "${pkgs'.openai-proxy}/bin/openai-proxy-hs";
               meta.description = "Haskell AI Gateway: OpenAI proxy + tools + metrics";
             };
 
             openai-proxy = {
               type = "app";
-              program = "${pkgs'.openai-proxy-hs}/bin/openai-proxy-hs";
+              program = "${pkgs'.openai-proxy}/bin/openai-proxy-hs";
               meta.description = "Haskell AI Gateway: OpenAI proxy + tools + metrics";
             };
 
@@ -166,7 +166,7 @@
           final: prev:
           {
             # Haskell packages
-            openai-proxy-hs = final.callPackage ./nix/openai-proxy-hs.nix { };
+            openai-proxy = final.callPackage ./nix/openai-proxy.nix { };
             trtllm-validate = final.haskellPackages.callPackage ./nix/trtllm-validate.nix { };
 
             # TRT-LLM engine building infrastructure (function set, not a package)
@@ -183,8 +183,7 @@
             } // args);
 
             # Convenience aliases
-            tool-server = final.openai-proxy-hs;
-            tool-server-hs = final.openai-proxy-hs;
+            tool-server = final.openai-proxy;
           };
 
         # NixOS module for AI inference services
@@ -229,7 +228,7 @@
                 };
 
                 serviceConfig = {
-                  ExecStart = "${pkgs.openai-proxy-hs}/bin/openai-proxy-hs";
+                  ExecStart = "${pkgs.openai-proxy}/bin/openai-proxy-hs";
                   Restart = "always";
                   RestartSec = 5;
                 };

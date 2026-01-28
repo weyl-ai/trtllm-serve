@@ -227,11 +227,11 @@ rec {
         export MODEL_DIR
         
         echo "Step 1: Downloading HuggingFace model..."
-        ${python}/bin/python ${./scripts/trtllm-download-model.py} "${hfModel}" "$MODEL_DIR"
+        ${python}/bin/python ${../scripts/trtllm-download-model.py} "${hfModel}" "$MODEL_DIR"
         ''}
 
         echo "Step 2+3: Building engine using LLM API (handles MoE properly)..."
-        ${python}/bin/python ${./scripts/trtllm-build-engine.py} "$MODEL_DIR" "$ENGINE_DIR" \
+        ${python}/bin/python ${../scripts/trtllm-build-engine.py} "$MODEL_DIR" "$ENGINE_DIR" \
           --tp=${toString tensorParallelSize} \
           --pp=${toString pipelineParallelSize} \
           --cuda-devices="${cudaDevices}"
@@ -289,7 +289,7 @@ rec {
         # Validation 3: Quick sanity inference (catch garbage output early)
         echo ""
         echo "Running sanity inference test..."
-        ${python}/bin/python ${./scripts/trtllm-sanity-check.py} "$out" --cuda-devices="${cudaDevices}"
+        ${python}/bin/python ${../scripts/trtllm-sanity-check.py} "$out" --cuda-devices="${cudaDevices}"
         
         echo ""
         echo "Engine build complete: ${toString worldSize} rank(s)"

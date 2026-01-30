@@ -82,12 +82,12 @@ in
     };
 
     enginePath = lib.mkOption {
-      type = lib.types.path;
+      type = lib.types.str;
       description = "Path to TRT-LLM engine directory";
     };
 
     tokenizerPath = lib.mkOption {
-      type = lib.types.nullOr lib.types.path;
+      type = lib.types.nullOr lib.types.str;
       default = null;
       description = "Path to tokenizer (defaults to enginePath)";
     };
@@ -176,13 +176,13 @@ in
       };
 
       identityDir = lib.mkOption {
-        type = lib.types.nullOr lib.types.path;
+        type = lib.types.nullOr lib.types.str;
         default = null;
         description = "Path to identity directory (for attestation signing)";
       };
 
       attestationDir = lib.mkOption {
-        type = lib.types.nullOr lib.types.path;
+        type = lib.types.nullOr lib.types.str;
         default = null;
         description = "Path to attestation git repository";
       };
@@ -230,7 +230,7 @@ in
       };
 
       secretKeyFile = lib.mkOption {
-        type = lib.types.nullOr lib.types.path;
+        type = lib.types.nullOr lib.types.str;
         default = null;
         description = "File containing SearXNG secret key (generated if null)";
       };
@@ -253,7 +253,7 @@ in
     };
 
     dataDir = lib.mkOption {
-      type = lib.types.path;
+      type = lib.types.str;
       default = "/var/lib/trtllm";
       description = "Data directory for caches and state";
     };
@@ -301,8 +301,8 @@ in
       environment = {
         HOME = cfg.dataDir;
         HF_HOME = "${cfg.dataDir}/huggingface";
-        TRTLLM_ENGINE_PATH = toString cfg.enginePath;
-        TRTLLM_TOKENIZER_PATH = toString (if cfg.tokenizerPath != null then cfg.tokenizerPath else cfg.enginePath);
+        TRTLLM_ENGINE_PATH = cfg.enginePath;
+        TRTLLM_TOKENIZER_PATH = if cfg.tokenizerPath != null then cfg.tokenizerPath else cfg.enginePath;
         XDG_RUNTIME_DIR = "/run/trtllm-triton-${cfg.model}";
         TMPDIR = "/run/trtllm-triton-${cfg.model}";
       };
@@ -400,9 +400,9 @@ in
       } // lib.optionalAttrs cfg.searxng.enable {
         SEARXNG_URL = "http://localhost:${toString cfg.searxng.port}";
       } // lib.optionalAttrs (cfg.toolServer.identityDir != null) {
-        IDENTITY_DIR = toString cfg.toolServer.identityDir;
+        IDENTITY_DIR = cfg.toolServer.identityDir;
       } // lib.optionalAttrs (cfg.toolServer.attestationDir != null) {
-        ATTESTATION_DIR = toString cfg.toolServer.attestationDir;
+        ATTESTATION_DIR = cfg.toolServer.attestationDir;
       };
 
       serviceConfig = {
@@ -419,7 +419,7 @@ in
         ProtectSystem = "strict";
         ProtectHome = "read-only";
         ReadWritePaths = [ cfg.dataDir "${cfg.dataDir}/workspaces" ]
-          ++ lib.optional (cfg.toolServer.attestationDir != null) (toString cfg.toolServer.attestationDir);
+          ++ lib.optional (cfg.toolServer.attestationDir != null) cfg.toolServer.attestationDir;
       };
     };
 

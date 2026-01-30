@@ -44,12 +44,14 @@ import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import qualified Data.Text.Encoding as TE
 import Data.Time.Clock (UTCTime)
-import Data.Time.Format.ISO8601 (iso8601Show, iso8601ParseM)
+import Data.Time.Format (parseTimeM, defaultTimeLocale)
+import Data.Time.Format.ISO8601 (iso8601Show)
 import GHC.Generics
 import System.Directory (doesFileExist, doesDirectoryExist)
 import System.Exit (ExitCode(..))
 import System.FilePath ((</>))
 import System.Process (readProcessWithExitCode)
+import qualified System.IO as IO
 
 
 -- ════════════════════════════════════════════════════════════════════════════════
@@ -308,7 +310,7 @@ createAttestation identity mRepoPath attType context mThought mAction coeffects 
           (_, dateOut, _) <- readProcessWithExitCode
             "git" ["-C", repoPath, "log", "-1", "--format=%cI"] ""
           
-          let mTimestamp = iso8601ParseM (T.unpack $ T.strip $ T.pack dateOut) :: Maybe UTCTime
+          let mTimestamp = parseTimeM True defaultTimeLocale "%Y-%m-%dT%H:%M:%S%z" (T.unpack $ T.strip $ T.pack dateOut) :: Maybe UTCTime
           case mTimestamp of
             Nothing -> pure $ Left $ ParseError "Could not parse commit timestamp"
             Just timestamp -> pure $ Right $ Attestation
@@ -331,22 +333,26 @@ getAttestationLog mRepoPath limit = do
   let repoPath = fromMaybe defaultAttestationDir mRepoPath
   
   repoExists <- doesDirectoryExist (repoPath </> ".git")
+  
   if not repoExists
     then pure $ Left $ AttestationRepoNotFound repoPath
     else do
       -- Get log with signature status
+      -- Note: Don't use --show-signature as it pollutes stdout
+      -- %G? and %GF already give us signature status
       (exitCode, stdout, _) <- readProcessWithExitCode
         "git"
         [ "-C", repoPath
         , "log"
-        , "--show-signature"
         , "--format=%H|%cI|%s|%G?|%GF"
         , "-n", show limit
         ] ""
       
+      
       case exitCode of
         ExitFailure _ -> pure $ Left $ GitError "Failed to read git log"
         ExitSuccess -> do
+          -- Parse all non-empty lines - format is clean without --show-signature
           let entries = filter (not . T.null) $ T.lines $ T.pack stdout
           attestations <- mapM (parseLogEntry repoPath) entries
           pure $ Right $ catMaybes attestations
@@ -354,11 +360,14 @@ getAttestationLog mRepoPath limit = do
 -- | Parse a single log entry
 parseLogEntry :: FilePath -> Text -> IO (Maybe Attestation)
 parseLogEntry repoPath line = do
-  case T.splitOn "|" line of
+  let parts = T.splitOn "|" line
+  case parts of
     [hash, date, subject, sigStatus, sigFp] -> do
-      let mTimestamp = iso8601ParseM (T.unpack date) :: Maybe UTCTime
+      -- Parse ISO8601 format: 2026-01-28T06:14:22-05:00
+      let mTimestamp = parseTimeM True defaultTimeLocale "%Y-%m-%dT%H:%M:%S%z" (T.unpack date) :: Maybe UTCTime
       case mTimestamp of
-        Nothing -> pure Nothing
+        Nothing -> do
+          pure Nothing
         Just ts -> do
           -- Parse attestation type from subject
           let attType = parseAttestationType subject
@@ -380,7 +389,8 @@ parseLogEntry repoPath line = do
             , atCoeffects = coeffs
             , atSignature = sigStat
             }
-    _ -> pure Nothing
+    _ -> do
+      pure Nothing
 
 parseAttestationType :: Text -> AttestationType
 parseAttestationType subject

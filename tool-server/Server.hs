@@ -25,7 +25,7 @@ import Network.HTTP.Client.TLS (tlsManagerSettings)
 import Network.Wai.Handler.Warp
 import Servant
 import System.Environment (lookupEnv)
-import System.IO (hFlush, stdout)
+import System.IO (hFlush, stdout, stderr, hPutStrLn)
 import Text.Read (readMaybe)
 
 import API (ToolServerAPIFull, toolServerAPIFull, openApiSpec, HealthResp(..), CoeffectsManifest(..))
@@ -39,22 +39,24 @@ import qualified Attestation as AT
 -- ════════════════════════════════════════════════════════════════════════════════
 
 data ServerState = ServerState
-  { ssSandbox    :: !CS.SandboxState
-  , ssIdentity   :: !(Maybe AT.Identity)
-  , ssManager    :: !Manager
-  , ssSearxngUrl :: !(Maybe Text)
-  , ssJinaApiKey :: !(Maybe Text)
+  { ssSandbox        :: !CS.SandboxState
+  , ssIdentity       :: !(Maybe AT.Identity)
+  , ssAttestationDir :: !(Maybe FilePath)
+  , ssManager        :: !Manager
+  , ssSearxngUrl     :: !(Maybe Text)
+  , ssJinaApiKey     :: !(Maybe Text)
   }
 
 initServerState :: IO ServerState
 initServerState = do
   sandbox <- CS.newSandboxState
   identityDir <- lookupEnv "IDENTITY_DIR"
+  attestDir <- lookupEnv "ATTESTATION_DIR"
   identity <- either (const Nothing) Just <$> AT.loadIdentity identityDir
   manager <- newManager tlsManagerSettings
   searxng <- fmap T.pack <$> lookupEnv "SEARXNG_URL"
   jina <- fmap T.pack <$> lookupEnv "JINA_API_KEY"
-  pure $ ServerState sandbox identity manager searxng jina
+  pure $ ServerState sandbox identity attestDir manager searxng jina
 
 
 -- ════════════════════════════════════════════════════════════════════════════════
@@ -187,16 +189,17 @@ createAttestationHandler state CreateAttestationReq{..} = case ssIdentity state 
       Right att -> pure $ convertAttestation att
 
 attestationLogHandler :: ServerState -> Maybe Int -> Handler AttestationLogResp
-attestationLogHandler _state mLimit = do
+attestationLogHandler state mLimit = do
   let limit = fromMaybe 20 mLimit
-  result <- liftIO $ AT.getAttestationLog Nothing limit
+  result <- liftIO $ AT.getAttestationLog (ssAttestationDir state) limit
   case result of
-    Left _err -> throwError err500 { errBody = "Failed to read attestation log" }
+    Left err -> do
+      throwError err500 { errBody = "Failed to read attestation log" }
     Right atts -> pure $ AttestationLogResp (map convertAttestation atts) (length atts)
 
 verifyAttestationHandler :: ServerState -> Text -> Handler SignatureResp
-verifyAttestationHandler _state commit = do
-  result <- liftIO $ AT.verifyAttestation Nothing commit
+verifyAttestationHandler state commit = do
+  result <- liftIO $ AT.verifyAttestation (ssAttestationDir state) commit
   case result of
     Left _err -> throwError err500 { errBody = "Verification failed" }
     Right status -> pure $ convertSigStatus status

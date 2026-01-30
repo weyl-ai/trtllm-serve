@@ -49,7 +49,8 @@ data ServerState = ServerState
 initServerState :: IO ServerState
 initServerState = do
   sandbox <- CS.newSandboxState
-  identity <- either (const Nothing) Just <$> AT.loadIdentity Nothing
+  identityDir <- lookupEnv "IDENTITY_DIR"
+  identity <- either (const Nothing) Just <$> AT.loadIdentity identityDir
   manager <- newManager tlsManagerSettings
   searxng <- fmap T.pack <$> lookupEnv "SEARXNG_URL"
   jina <- fmap T.pack <$> lookupEnv "JINA_API_KEY"

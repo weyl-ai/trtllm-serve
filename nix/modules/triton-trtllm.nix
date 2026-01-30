@@ -296,8 +296,8 @@ in
       "d ${cfg.dataDir} 0755 ${cfg.user} ${cfg.group} -"
       "d ${cfg.dataDir}/huggingface 0755 ${cfg.user} ${cfg.group} -"
       "d ${cfg.dataDir}/workspaces 0755 ${cfg.user} ${cfg.group} -"
-      # Triton Python backend needs writable /tmp
-      "z /tmp 1777 root root -"
+      # Triton Python backend needs writable tmp - create dedicated dir
+      "d ${cfg.dataDir}/tmp 1777 ${cfg.user} ${cfg.group} -"
     ];
 
     # ──────────────────────────────────────────────────────────────────────────
@@ -316,7 +316,10 @@ in
         TRTLLM_ENGINE_PATH = cfg.enginePath;
         TRTLLM_TOKENIZER_PATH = if cfg.tokenizerPath != null then cfg.tokenizerPath else cfg.enginePath;
         XDG_RUNTIME_DIR = "/run/trtllm-triton-${cfg.model}";
+        # Python backend uses mkdtemp which checks TMPDIR -> TMP -> TEMP -> /tmp
         TMPDIR = "/run/trtllm-triton-${cfg.model}";
+        TMP = "/run/trtllm-triton-${cfg.model}";
+        TEMP = "/run/trtllm-triton-${cfg.model}";
       };
 
       serviceConfig = {

@@ -109,6 +109,16 @@ in
         description = "Enable Triton inference server";
       };
 
+      wrapper = lib.mkOption {
+        type = lib.types.nullOr lib.types.package;
+        default = null;
+        description = ''
+          Optional wrapper package (e.g., tritonserver-qwen3) that sets up
+          the model repository automatically. If set, this is used instead
+          of raw tritonserver with --model-repository.
+        '';
+      };
+
       httpPort = lib.mkOption {
         type = lib.types.port;
         default = 8000;
@@ -309,13 +319,17 @@ in
 
       serviceConfig = {
         Type = "simple";
-        ExecStart = lib.concatStringsSep " " ([
-          "${cfg.package.tritonserver}/bin/tritonserver"
-          "--model-repository=${cfg.enginePath}"
-          "--http-port=${toString cfg.triton.httpPort}"
-          "--grpc-port=${toString cfg.triton.grpcPort}"
-          "--metrics-port=${toString cfg.triton.metricsPort}"
-        ] ++ cfg.triton.extraArgs);
+        # Use wrapper if provided, otherwise use raw tritonserver with model-repository
+        ExecStart = if cfg.triton.wrapper != null then
+          "${cfg.triton.wrapper}/bin/${cfg.triton.wrapper.pname or "tritonserver-${cfg.model}"}"
+        else
+          lib.concatStringsSep " " ([
+            "${cfg.package.tritonserver}/bin/tritonserver"
+            "--model-repository=${cfg.enginePath}"
+            "--http-port=${toString cfg.triton.httpPort}"
+            "--grpc-port=${toString cfg.triton.grpcPort}"
+            "--metrics-port=${toString cfg.triton.metricsPort}"
+          ] ++ cfg.triton.extraArgs);
         Restart = "on-failure";
         RestartSec = "10s";
 

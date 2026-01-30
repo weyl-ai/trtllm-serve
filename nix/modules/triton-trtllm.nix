@@ -296,6 +296,8 @@ in
       "d ${cfg.dataDir} 0755 ${cfg.user} ${cfg.group} -"
       "d ${cfg.dataDir}/huggingface 0755 ${cfg.user} ${cfg.group} -"
       "d ${cfg.dataDir}/workspaces 0755 ${cfg.user} ${cfg.group} -"
+      # Triton Python backend needs writable /tmp
+      "z /tmp 1777 root root -"
     ];
 
     # ──────────────────────────────────────────────────────────────────────────

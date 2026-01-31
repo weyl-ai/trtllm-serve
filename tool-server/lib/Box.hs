@@ -24,6 +24,8 @@ module Box
   , renderFrame
   , renderTree
   , renderDiagram
+    -- * Helpers (for testing)
+  , pad
     -- * Box Characters (exported for reuse)
   , BoxChars(..)
   , singleBox
@@ -175,9 +177,10 @@ textLen :: Text -> Int
 textLen = T.length
 
 -- | Pad text to width with alignment
+-- Output is max(width, textLen txt) characters - never truncates
 pad :: Alignment -> Int -> Text -> Text
 pad align width txt
-  | len >= width = T.take width txt
+  | len >= width = txt  -- Never truncate, just return original
   | otherwise = case align of
       AlignLeft   -> txt <> T.replicate diff " "
       AlignRight  -> T.replicate diff " " <> txt

@@ -76,6 +76,7 @@ let
       aeson
       bytestring
       directory
+      hedgehog
       hspec
       http-client
       servant-client

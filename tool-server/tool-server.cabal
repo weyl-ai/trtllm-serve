@@ -142,3 +142,18 @@ test-suite tool-server-test
     -threaded
     -rtsopts
     "-with-rtsopts=-N"
+
+test-suite box-props
+  import:           warnings, lang
+  type:             exitcode-stdio-1.0
+  main-is:          BoxTest.hs
+  hs-source-dirs:   test
+  build-depends:
+    , base              >= 4.14   && < 5
+    , hedgehog          >= 1.2    && < 1.5
+    , text              >= 1.2    && < 2.2
+    , tool-server
+  ghc-options:
+    -threaded
+    -rtsopts
+    "-with-rtsopts=-N"

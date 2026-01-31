@@ -32,6 +32,10 @@ import API (ToolServerAPIFull, toolServerAPIFull, openApiSpec, HealthResp(..), C
 import API.Types
 import qualified CodeSandbox as CS
 import qualified Attestation as AT
+import qualified CAS
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Base64 as B64
+import qualified Data.Text.Encoding as TE
 
 
 -- ════════════════════════════════════════════════════════════════════════════════
@@ -42,6 +46,7 @@ data ServerState = ServerState
   { ssSandbox        :: !CS.SandboxState
   , ssIdentity       :: !(Maybe AT.Identity)
   , ssAttestationDir :: !(Maybe FilePath)
+  , ssCASStore       :: !CAS.CASStore
   , ssManager        :: !Manager
   , ssSearxngUrl     :: !(Maybe Text)
   , ssJinaApiKey     :: !(Maybe Text)
@@ -53,10 +58,17 @@ initServerState = do
   identityDir <- lookupEnv "IDENTITY_DIR"
   attestDir <- lookupEnv "ATTESTATION_DIR"
   identity <- either (const Nothing) Just <$> AT.loadIdentity identityDir
+  -- CAS store - defaults to /var/lib/trtllm/cas
+  casDir <- fromMaybe "/var/lib/trtllm/cas" <$> lookupEnv "CAS_DATA_DIR"
+  casNativelink <- lookupEnv "CAS_NATIVELINK_ENDPOINT"
+  let casConfig = case casNativelink of
+        Nothing -> CAS.defaultConfig casDir
+        Just ep -> CAS.nativelinkConfig casDir ep
+  casStore <- CAS.newCASStore casConfig
   manager <- newManager tlsManagerSettings
   searxng <- fmap T.pack <$> lookupEnv "SEARXNG_URL"
   jina <- fmap T.pack <$> lookupEnv "JINA_API_KEY"
-  pure $ ServerState sandbox identity attestDir manager searxng jina
+  pure $ ServerState sandbox identity attestDir casStore manager searxng jina
 
 
 -- ════════════════════════════════════════════════════════════════════════════════
@@ -304,6 +316,66 @@ convertSigStatus = \case
 
 
 -- ════════════════════════════════════════════════════════════════════════════════
+-- CAS Handlers
+-- ════════════════════════════════════════════════════════════════════════════════
+
+casInfoHandler :: ServerState -> Handler CASInfoResp
+casInfoHandler state = do
+  let config = CAS.storeConfig (ssCASStore state)
+  blobs <- liftIO $ CAS.listBlobs (ssCASStore state)
+  pure $ CASInfoResp
+    { cirDataDir = T.pack (CAS.casDataDir config)
+    , cirBlobCount = length blobs
+    , cirNativelink = T.pack <$> CAS.casNativelinkEndpoint config
+    }
+
+casPutBlobHandler :: ServerState -> PutBlobReq -> Handler PutBlobResp
+casPutBlobHandler state PutBlobReq{..} = do
+  -- Decode base64 content
+  case B64.decode (TE.encodeUtf8 pbrContent) of
+    Left err -> throwError $ err400 { errBody = "Invalid base64: " <> BS.fromStrict (TE.encodeUtf8 $ T.pack err) }
+    Right content -> do
+      digest <- liftIO $ CAS.putBlob (ssCASStore state) content
+      pure $ PutBlobResp
+        { pbrDigest = digestToResp digest
+        , pbrStatus = "stored"
+        }
+
+casGetBlobHandler :: ServerState -> Text -> Handler GetBlobResp
+casGetBlobHandler state hashText = do
+  -- Parse digest from hash (we don't have size, so we need to look it up)
+  mContent <- liftIO $ do
+    blobs <- CAS.listBlobs (ssCASStore state)
+    case filter (\d -> CAS.digestHash d == hashText) blobs of
+      []    -> pure Nothing
+      (d:_) -> CAS.getBlob (ssCASStore state) d
+  case mContent of
+    Nothing -> pure $ GetBlobResp
+      { gbrContent = Nothing
+      , gbrDigest = DigestResp hashText 0
+      , gbrStatus = "not_found"
+      }
+    Just content -> do
+      let digest = CAS.digestFromBytes content
+      pure $ GetBlobResp
+        { gbrContent = Just $ TE.decodeUtf8 $ B64.encode content
+        , gbrDigest = digestToResp digest
+        , gbrStatus = "found"
+        }
+
+casExistsHandler :: ServerState -> Text -> Handler SuccessResp
+casExistsHandler state hashText = do
+  blobs <- liftIO $ CAS.listBlobs (ssCASStore state)
+  let exists = any (\d -> CAS.digestHash d == hashText) blobs
+  if exists
+    then pure $ SuccessResp "exists"
+    else pure $ SuccessResp "not_found"
+
+digestToResp :: CAS.Digest -> DigestResp
+digestToResp d = DigestResp (CAS.digestHash d) (CAS.digestSize d)
+
+
+-- ════════════════════════════════════════════════════════════════════════════════
 -- Server
 -- ════════════════════════════════════════════════════════════════════════════════
 
@@ -330,6 +402,11 @@ server state =
   :<|> (searchHandler state
    :<|> searchHandler state  -- code_search uses same handler
    :<|> readUrlHandler state)
+       -- CAS
+  :<|> (casInfoHandler state
+   :<|> casPutBlobHandler state
+   :<|> casGetBlobHandler state
+   :<|> casExistsHandler state)
        -- Coeffects
   :<|> coeffectsManifestHandler
 

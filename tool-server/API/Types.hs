@@ -46,6 +46,12 @@ module API.Types
   , SearchResp(..)
   , SearchResult(..)
   , ReadUrlResp(..)
+    -- * CAS API
+  , DigestResp(..)
+  , PutBlobReq(..)
+  , PutBlobResp(..)
+  , GetBlobResp(..)
+  , CASInfoResp(..)
     -- * Common
   , ErrorResp(..)
   , SuccessResp(..)
@@ -486,3 +492,80 @@ instance ToJSON ReadUrlResp where
     ]
 instance FromJSON ReadUrlResp
 instance ToSchema ReadUrlResp
+
+
+-- ════════════════════════════════════════════════════════════════════════════════
+-- CAS (Content-Addressable Storage) API Types
+-- ════════════════════════════════════════════════════════════════════════════════
+
+-- | Digest for content-addressed blobs
+data DigestResp = DigestResp
+  { drHash :: !Text  -- ^ SHA256 hex (64 chars)
+  , drSize :: !Int   -- ^ Size in bytes
+  } deriving (Show, Eq, Generic)
+
+instance ToJSON DigestResp where
+  toJSON DigestResp{..} = object
+    [ "hash" .= drHash
+    , "size" .= drSize
+    ]
+instance FromJSON DigestResp
+instance ToSchema DigestResp
+
+-- | Request to upload a blob
+data PutBlobReq = PutBlobReq
+  { pbrContent :: !Text  -- ^ Base64-encoded content
+  } deriving (Show, Eq, Generic)
+
+instance ToJSON PutBlobReq where
+  toJSON PutBlobReq{..} = object ["content" .= pbrContent]
+instance FromJSON PutBlobReq where
+  parseJSON = withObject "PutBlobReq" $ \v ->
+    PutBlobReq <$> v .: "content"
+instance ToSchema PutBlobReq
+
+-- | Response from putting a blob
+data PutBlobResp = PutBlobResp
+  { pbrDigest :: !DigestResp
+  , pbrStatus :: !Text
+  } deriving (Show, Eq, Generic)
+
+instance ToJSON PutBlobResp where
+  toJSON PutBlobResp{..} = object
+    [ "digest" .= pbrDigest
+    , "status" .= pbrStatus
+    ]
+instance FromJSON PutBlobResp
+instance ToSchema PutBlobResp
+
+-- | Response from getting a blob
+data GetBlobResp = GetBlobResp
+  { gbrContent :: !(Maybe Text)  -- ^ Base64-encoded content (Nothing if not found)
+  , gbrDigest  :: !DigestResp
+  , gbrStatus  :: !Text
+  } deriving (Show, Eq, Generic)
+
+instance ToJSON GetBlobResp where
+  toJSON GetBlobResp{..} = object
+    [ "content" .= gbrContent
+    , "digest" .= gbrDigest
+    , "status" .= gbrStatus
+    ]
+instance FromJSON GetBlobResp
+instance ToSchema GetBlobResp
+
+-- | CAS store info
+data CASInfoResp = CASInfoResp
+  { cirDataDir    :: !Text
+  , cirBlobCount  :: !Int
+  , cirNativelink :: !(Maybe Text)  -- ^ NativeLink endpoint if configured
+  } deriving (Show, Eq, Generic)
+
+instance ToJSON CASInfoResp where
+  toJSON CASInfoResp{..} = object
+    [ "data_dir" .= cirDataDir
+    , "blob_count" .= cirBlobCount
+    , "nativelink" .= cirNativelink
+    ]
+instance FromJSON CASInfoResp
+instance ToSchema CASInfoResp

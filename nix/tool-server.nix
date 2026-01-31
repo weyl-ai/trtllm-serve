@@ -45,9 +45,12 @@ let
     
     libraryHaskellDepends = with haskellPackages; [
       aeson
+      bytestring
       containers
+      cryptonite
       directory
       filepath
+      memory
       process
       stm
       temporary
@@ -57,6 +60,8 @@ let
     
     executableHaskellDepends = with haskellPackages; [
       aeson
+      base64-bytestring
+      bytestring
       http-client
       http-client-tls
       openapi3

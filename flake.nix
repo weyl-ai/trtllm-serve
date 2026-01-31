@@ -57,6 +57,7 @@
             overlays = [
               inputs.nvidia-sdk.overlays.default
               inputs.nvidia-sdk.overlays.stdenv-overlay
+              (import ./nix/haskell-overlay.nix)
               inputs.self.overlays.default
             ];
           };

@@ -19,6 +19,7 @@ module API
   , CodeAPI
   , IdentityAPI
   , ToolsAPI
+  , CASAPI
   , HealthAPI
   , HealthAPIWithSpec
     -- * Response types defined here
@@ -116,6 +117,22 @@ type ToolsAPI = "tools" :>
 
 
 -- ════════════════════════════════════════════════════════════════════════════════
+-- CAS (Content-Addressable Storage) API
+-- ════════════════════════════════════════════════════════════════════════════════
+
+type CASAPI = "cas" :>
+  (    -- Store info
+       "info" :> Get '[JSON] CASInfoResp
+       -- Put blob (returns digest)
+  :<|> "blob" :> ReqBody '[JSON] PutBlobReq :> Post '[JSON] PutBlobResp
+       -- Get blob by hash
+  :<|> "blob" :> Capture "hash" Text :> Get '[JSON] GetBlobResp
+       -- Check if blob exists
+  :<|> "blob" :> Capture "hash" Text :> "exists" :> Get '[JSON] SuccessResp
+  )
+
+
+-- ════════════════════════════════════════════════════════════════════════════════
 -- Coeffects Manifest
 -- ════════════════════════════════════════════════════════════════════════════════
 
@@ -143,6 +160,7 @@ type ToolServerAPI =
   :<|> CodeAPI 
   :<|> IdentityAPI 
   :<|> ToolsAPI
+  :<|> CASAPI
   :<|> CoeffectsAPI
 
 -- | Full API including the openapi.json endpoint (for serving)
@@ -151,6 +169,7 @@ type ToolServerAPIFull =
   :<|> CodeAPI
   :<|> IdentityAPI
   :<|> ToolsAPI
+  :<|> CASAPI
   :<|> CoeffectsAPI
 
 toolServerAPI :: Proxy ToolServerAPI

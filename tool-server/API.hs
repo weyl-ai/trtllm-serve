@@ -139,9 +139,10 @@ type CASAPI = "cas" :>
 -- ════════════════════════════════════════════════════════════════════════════════
 
 type BoxAPI = "box" :>
-  (    "table" :> ReqBody '[JSON] BoxTableReq :> Post '[JSON] BoxResp
-  :<|> "frame" :> ReqBody '[JSON] BoxFrameReq :> Post '[JSON] BoxResp
-  :<|> "tree"  :> ReqBody '[JSON] BoxTreeReq  :> Post '[JSON] BoxResp
+  (    "table"   :> ReqBody '[JSON] BoxTableReq   :> Post '[JSON] BoxResp
+  :<|> "frame"   :> ReqBody '[JSON] BoxFrameReq   :> Post '[JSON] BoxResp
+  :<|> "tree"    :> ReqBody '[JSON] BoxTreeReq    :> Post '[JSON] BoxResp
+  :<|> "diagram" :> ReqBody '[JSON] BoxDiagramReq :> Post '[JSON] BoxResp
   )
 
 

@@ -59,6 +59,9 @@ module API.Types
   , BoxFrameReq(..)
   , BoxTreeReq(..)
   , BoxTreeNodeReq(..)
+  , BoxDiagramReq(..)
+  , BoxDiagramNodeReq(..)
+  , BoxDiagramEdgeReq(..)
   , BoxResp(..)
 
     -- * Common
@@ -600,6 +603,48 @@ instance ToJSON BoxTreeReq where
 instance FromJSON BoxTreeReq where
   parseJSON = genericParseJSON jsonOptions
 instance ToSchema BoxTreeReq where
+  declareNamedSchema = genericDeclareNamedSchema schemaOptions
+
+-- | Diagram node
+data BoxDiagramNodeReq = BoxDiagramNodeReq
+  { bdnId    :: !Text
+  , bdnLabel :: !Text
+  } deriving (Show, Eq, Generic)
+
+instance ToJSON BoxDiagramNodeReq where
+  toJSON = genericToJSON jsonOptions
+instance FromJSON BoxDiagramNodeReq where
+  parseJSON = genericParseJSON jsonOptions
+instance ToSchema BoxDiagramNodeReq where
+  declareNamedSchema = genericDeclareNamedSchema schemaOptions
+
+-- | Diagram edge
+data BoxDiagramEdgeReq = BoxDiagramEdgeReq
+  { bdeFrom  :: !Text
+  , bdeTo    :: !Text
+  , bdeLabel :: !(Maybe Text)
+  } deriving (Show, Eq, Generic)
+
+instance ToJSON BoxDiagramEdgeReq where
+  toJSON = genericToJSON jsonOptions
+instance FromJSON BoxDiagramEdgeReq where
+  parseJSON = genericParseJSON jsonOptions
+instance ToSchema BoxDiagramEdgeReq where
+  declareNamedSchema = genericDeclareNamedSchema schemaOptions
+
+-- | Request to render a diagram
+data BoxDiagramReq = BoxDiagramReq
+  { bdrNodes  :: ![BoxDiagramNodeReq]
+  , bdrEdges  :: ![BoxDiagramEdgeReq]
+  , bdrLayout :: !(Maybe Text)  -- ^ "horizontal" (default), "vertical", "flow"
+  , bdrStyle  :: !(Maybe Text)  -- ^ "single" (default), "double", "rounded"
+  } deriving (Show, Eq, Generic)
+
+instance ToJSON BoxDiagramReq where
+  toJSON = genericToJSON jsonOptions
+instance FromJSON BoxDiagramReq where
+  parseJSON = genericParseJSON jsonOptions
+instance ToSchema BoxDiagramReq where
   declareNamedSchema = genericDeclareNamedSchema schemaOptions
 
 -- | Box rendering response

@@ -397,6 +397,15 @@ boxTreeHandler BoxTreeReq{..} = do
   let tree = Box.TreeNode btqRoot (map convertTreeNode btqChildren)
   pure $ BoxResp (Box.renderTree tree)
 
+boxDiagramHandler :: BoxDiagramReq -> Handler BoxResp
+boxDiagramHandler BoxDiagramReq{..} = do
+  let style = parseBoxStyle bdrStyle
+      layout = parseLayout bdrLayout
+      nodes = map convertDiagramNode bdrNodes
+      edges = map convertDiagramEdge bdrEdges
+      diagramData = Box.DiagramData nodes edges layout style
+  pure $ BoxResp (Box.renderDiagram diagramData)
+
 parseBoxStyle :: Maybe Text -> Box.BoxStyle
 parseBoxStyle Nothing = Box.Single
 parseBoxStyle (Just t) = case T.toLower t of
@@ -404,9 +413,24 @@ parseBoxStyle (Just t) = case T.toLower t of
   "rounded" -> Box.Rounded
   _         -> Box.Single
 
+parseLayout :: Maybe Text -> Box.DiagramLayout
+parseLayout Nothing = Box.Horizontal
+parseLayout (Just t) = case T.toLower t of
+  "vertical" -> Box.Vertical
+  "flow"     -> Box.Flow
+  _          -> Box.Horizontal
+
 convertTreeNode :: BoxTreeNodeReq -> Box.TreeNode
 convertTreeNode BoxTreeNodeReq{..} = 
   Box.TreeNode btnLabel (map convertTreeNode btnChildren)
+
+convertDiagramNode :: BoxDiagramNodeReq -> Box.DiagramNode
+convertDiagramNode BoxDiagramNodeReq{..} =
+  Box.DiagramNode bdnId bdnLabel
+
+convertDiagramEdge :: BoxDiagramEdgeReq -> Box.DiagramEdge
+convertDiagramEdge BoxDiagramEdgeReq{..} =
+  Box.DiagramEdge bdeFrom bdeTo bdeLabel
 
 
 -- ════════════════════════════════════════════════════════════════════════════════
@@ -444,7 +468,8 @@ server state =
        -- Box (pure, no state needed)
   :<|> (boxTableHandler
    :<|> boxFrameHandler
-   :<|> boxTreeHandler)
+   :<|> boxTreeHandler
+   :<|> boxDiagramHandler)
        -- Coeffects
   :<|> coeffectsManifestHandler
 

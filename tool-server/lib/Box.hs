@@ -14,11 +14,16 @@ module Box
   , TableData(..)
   , FrameData(..)
   , TreeNode(..)
+  , DiagramData(..)
+  , DiagramNode(..)
+  , DiagramEdge(..)
+  , DiagramLayout(..)
   , Alignment(..)
     -- * Rendering
   , renderTable
   , renderFrame
   , renderTree
+  , renderDiagram
     -- * Box Characters (exported for reuse)
   , BoxChars(..)
   , singleBox
@@ -28,7 +33,10 @@ module Box
 
 import Data.Text (Text)
 import qualified Data.Text as T
-import Data.List (intercalate)
+import Data.List (intercalate, sortBy)
+import Data.Ord (comparing)
+import Data.Maybe (fromMaybe, mapMaybe)
+import qualified Data.Map.Strict as M
 
 
 -- ════════════════════════════════════════════════════════════════════════════════
@@ -124,6 +132,31 @@ data FrameData = FrameData
 data TreeNode = TreeNode
   { tnLabel    :: !Text
   , tnChildren :: ![TreeNode]
+  } deriving (Show, Eq)
+
+-- | A node in a diagram
+data DiagramNode = DiagramNode
+  { dnId    :: !Text
+  , dnLabel :: !Text
+  } deriving (Show, Eq)
+
+-- | An edge connecting two nodes
+data DiagramEdge = DiagramEdge
+  { deFrom  :: !Text
+  , deTo    :: !Text
+  , deLabel :: !(Maybe Text)
+  } deriving (Show, Eq)
+
+-- | Layout direction for diagram
+data DiagramLayout = Horizontal | Vertical | Flow
+  deriving (Show, Eq)
+
+-- | Complete diagram specification
+data DiagramData = DiagramData
+  { ddNodes  :: ![DiagramNode]
+  , ddEdges  :: ![DiagramEdge]
+  , ddLayout :: !DiagramLayout
+  , ddStyle  :: !BoxStyle
   } deriving (Show, Eq)
 
 
@@ -296,3 +329,196 @@ renderTree node = T.unlines $ tnLabel node : renderChildren "" (tnChildren node)
       (prefix <> "├── " <> tnLabel child)
       : renderChildren (prefix <> "│   ") (tnChildren child)
       ++ renderChildren prefix rest
+
+
+-- ════════════════════════════════════════════════════════════════════════════════
+-- Diagram Rendering - Boxes with Arrows
+-- ════════════════════════════════════════════════════════════════════════════════
+
+-- | Arrow characters
+data ArrowChars = ArrowChars
+  { acRight     :: !Text  -- →
+  , acLeft      :: !Text  -- ←
+  , acDown      :: !Text  -- ↓
+  , acUp        :: !Text  -- ↑
+  , acHoriz     :: !Char  -- ─
+  , acVert      :: !Char  -- │
+  , acCornerDR  :: !Char  -- ┌ (down-right)
+  , acCornerDL  :: !Char  -- ┐ (down-left)
+  , acCornerUR  :: !Char  -- └ (up-right)
+  , acCornerUL  :: !Char  -- ┘ (up-left)
+  }
+
+defaultArrows :: ArrowChars
+defaultArrows = ArrowChars
+  { acRight    = "→"
+  , acLeft     = "←"
+  , acDown     = "↓"
+  , acUp       = "↑"
+  , acHoriz    = '─'
+  , acVert     = '│'
+  , acCornerDR = '┌'
+  , acCornerDL = '┐'
+  , acCornerUR = '└'
+  , acCornerUL = '┘'
+  }
+
+-- | Render a diagram with boxes and arrows
+--
+-- Horizontal layout:
+-- ┌───────┐     ┌───────┐     ┌───────┐
+-- │ Input │────→│Process│────→│Output │
+-- └───────┘     └───────┘     └───────┘
+--
+-- Vertical layout:
+-- ┌───────┐
+-- │ Start │
+-- └───┬───┘
+--     │
+--     ↓
+-- ┌───────┐
+-- │  End  │
+-- └───────┘
+renderDiagram :: DiagramData -> Text
+renderDiagram dd@DiagramData{..} = case ddLayout of
+  Horizontal -> renderHorizontal dd
+  Vertical   -> renderVertical dd
+  Flow       -> renderFlow dd
+
+-- | Render boxes horizontally with arrows between them
+renderHorizontal :: DiagramData -> Text
+renderHorizontal DiagramData{..} = T.unlines result
+  where
+    bc = boxChars ddStyle
+    ac = defaultArrows
+    
+    -- Calculate box dimensions
+    boxWidth = maximum (6 : map (textLen . dnLabel) ddNodes) + 4
+    boxHeight = 3
+    arrowLen = 5
+    
+    -- Build edge map: from -> [(to, label)]
+    edgeMap :: M.Map Text [(Text, Maybe Text)]
+    edgeMap = M.fromListWith (++) 
+      [(deFrom e, [(deTo e, deLabel e)]) | e <- ddEdges]
+    
+    -- Order nodes by edges (simple: keep original order)
+    nodes = ddNodes
+    
+    -- Generate the three lines of a horizontal diagram
+    result = 
+      [ topLine, midLine, botLine ]
+    
+    -- Top line: ┌───────┐     ┌───────┐
+    topLine = T.intercalate (T.replicate arrowLen " ") $
+      map (\_ -> T.singleton (bcTopLeft bc) <> rep (boxWidth - 2) (bcHorizontal bc) <> T.singleton (bcTopRight bc)) nodes
+    
+    -- Middle line: │ Label │────→│ Label │
+    midLine = T.concat $ zipWith renderNodeWithArrow [0..] nodes
+    
+    renderNodeWithArrow :: Int -> DiagramNode -> Text
+    renderNodeWithArrow idx node =
+      let content = T.singleton (bcVertical bc) <> pad AlignCenter (boxWidth - 2) (dnLabel node) <> T.singleton (bcVertical bc)
+          -- Check if there's an arrow to the next node
+          hasArrow = idx < length nodes - 1 && 
+                     any (\(to, _) -> to == dnId (nodes !! (idx + 1))) 
+                         (fromMaybe [] $ M.lookup (dnId node) edgeMap)
+          arrow = if hasArrow 
+                  then rep (arrowLen - 1) (acHoriz ac) <> acRight ac
+                  else T.replicate arrowLen " "
+      in if idx < length nodes - 1 
+         then content <> arrow 
+         else content
+    
+    -- Bottom line: └───────┘     └───────┘
+    botLine = T.intercalate (T.replicate arrowLen " ") $
+      map (\_ -> T.singleton (bcBottomLeft bc) <> rep (boxWidth - 2) (bcHorizontal bc) <> T.singleton (bcBottomRight bc)) nodes
+
+-- | Render boxes vertically with arrows between them
+renderVertical :: DiagramData -> Text
+renderVertical DiagramData{..} = T.unlines $ concatMap renderNodeWithConnection (zip [0..] ddNodes)
+  where
+    bc = boxChars ddStyle
+    ac = defaultArrows
+    
+    -- Calculate box dimensions
+    boxWidth = maximum (6 : map (textLen . dnLabel) ddNodes) + 4
+    
+    -- Build edge map
+    edgeMap :: M.Map Text [(Text, Maybe Text)]
+    edgeMap = M.fromListWith (++) 
+      [(deFrom e, [(deTo e, deLabel e)]) | e <- ddEdges]
+    
+    nodes = ddNodes
+    centerPad = (boxWidth - 1) `div` 2
+    
+    renderNodeWithConnection :: (Int, DiagramNode) -> [Text]
+    renderNodeWithConnection (idx, node) =
+      let top = T.singleton (bcTopLeft bc) <> rep (boxWidth - 2) (bcHorizontal bc) <> T.singleton (bcTopRight bc)
+          mid = T.singleton (bcVertical bc) <> pad AlignCenter (boxWidth - 2) (dnLabel node) <> T.singleton (bcVertical bc)
+          -- Check if there's an arrow to the next node  
+          hasArrow = idx < length nodes - 1 &&
+                     any (\(to, _) -> to == dnId (nodes !! (idx + 1)))
+                         (fromMaybe [] $ M.lookup (dnId node) edgeMap)
+          bot = if hasArrow
+                then T.singleton (bcBottomLeft bc) <> rep centerPad (bcHorizontal bc) <> "┬" <> rep (boxWidth - 3 - centerPad) (bcHorizontal bc) <> T.singleton (bcBottomRight bc)
+                else T.singleton (bcBottomLeft bc) <> rep (boxWidth - 2) (bcHorizontal bc) <> T.singleton (bcBottomRight bc)
+          arrow = if hasArrow
+                  then [ T.replicate centerPad " " <> T.singleton (acVert ac)
+                       , T.replicate centerPad " " <> acDown ac
+                       ]
+                  else []
+      in [top, mid, bot] ++ arrow
+
+-- | Flow layout: nodes arranged in rows with wrapping
+renderFlow :: DiagramData -> Text
+renderFlow DiagramData{..} = T.unlines result
+  where
+    bc = boxChars ddStyle
+    ac = defaultArrows
+    
+    -- Calculate box dimensions  
+    boxWidth = maximum (6 : map (textLen . dnLabel) ddNodes) + 4
+    arrowLen = 3
+    nodesPerRow = 4  -- Wrap after 4 nodes
+    
+    -- Build edge map
+    edgeMap :: M.Map Text [(Text, Maybe Text)]
+    edgeMap = M.fromListWith (++) 
+      [(deFrom e, [(deTo e, deLabel e)]) | e <- ddEdges]
+    
+    -- Chunk nodes into rows
+    chunksOf :: Int -> [a] -> [[a]]
+    chunksOf _ [] = []
+    chunksOf n xs = take n xs : chunksOf n (drop n xs)
+    
+    rows = chunksOf nodesPerRow ddNodes
+    
+    -- Render each row
+    result = concatMap renderRow (zip [0..] rows)
+    
+    renderRow :: (Int, [DiagramNode]) -> [Text]
+    renderRow (rowIdx, rowNodes) =
+      let top = T.intercalate (T.replicate arrowLen " ") $
+                  map (\_ -> T.singleton (bcTopLeft bc) <> rep (boxWidth - 2) (bcHorizontal bc) <> T.singleton (bcTopRight bc)) rowNodes
+          mid = T.concat $ zipWith (renderNodeInRow rowIdx (length rowNodes)) [0..] rowNodes
+          bot = T.intercalate (T.replicate arrowLen " ") $
+                  map (\_ -> T.singleton (bcBottomLeft bc) <> rep (boxWidth - 2) (bcHorizontal bc) <> T.singleton (bcBottomRight bc)) rowNodes
+          -- Add vertical arrow to next row if exists
+          hasNextRow = rowIdx < length rows - 1
+          rowArrow = if hasNextRow
+                     then [ T.replicate ((boxWidth + arrowLen) * length rowNodes `div` 2 - 1) " " <> T.singleton (acVert ac)
+                          , T.replicate ((boxWidth + arrowLen) * length rowNodes `div` 2 - 1) " " <> acDown ac
+                          ]
+                     else []
+      in [top, mid, bot] ++ rowArrow
+    
+    renderNodeInRow :: Int -> Int -> Int -> DiagramNode -> Text
+    renderNodeInRow rowIdx rowLen colIdx node =
+      let content = T.singleton (bcVertical bc) <> pad AlignCenter (boxWidth - 2) (dnLabel node) <> T.singleton (bcVertical bc)
+          -- Arrow to next in row
+          nextInRow = colIdx < rowLen - 1
+          arrow = if nextInRow
+                  then rep (arrowLen - 1) (acHoriz ac) <> acRight ac
+                  else ""
+      in content <> arrow

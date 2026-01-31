@@ -7,11 +7,13 @@
 
 -- | API Types for Tool Server with OpenAPI3 instances
 --
--- All request/response types with proper schema derivation for
--- automatic OpenAPI spec generation.
+-- All request/response types use generic derivation with a field label
+-- modifier that strips the type prefix and converts to snake_case.
+-- This ensures ToJSON, FromJSON, and ToSchema all agree on field names.
 --
--- Field naming convention: prefix with abbreviation of type name
--- to avoid record field conflicts.
+-- Field naming convention in Haskell: prefix with abbreviation of type name
+-- (e.g., wfrWorkspaceId for WriteFileReq) to avoid record field conflicts.
+-- JSON/OpenAPI uses snake_case without prefix (e.g., workspace_id).
 --
 -- @since 0.1.0
 
@@ -52,15 +54,48 @@ module API.Types
   , PutBlobResp(..)
   , GetBlobResp(..)
   , CASInfoResp(..)
+
     -- * Common
   , ErrorResp(..)
   , SuccessResp(..)
   ) where
 
 import Data.Aeson
+import Data.Char (isUpper, toLower)
 import Data.OpenApi
 import Data.Text (Text)
 import GHC.Generics
+
+-- ════════════════════════════════════════════════════════════════════════════════
+-- JSON/Schema Options
+-- ════════════════════════════════════════════════════════════════════════════════
+
+-- | Strip type prefix from field name and convert to snake_case
+--
+-- Examples:
+--   wfrWorkspaceId -> workspace_id
+--   carAttestType  -> attest_type
+--   srStatus       -> status
+stripPrefixSnakeCase :: String -> String
+stripPrefixSnakeCase = camelToSnake . dropWhile (not . isUpper)
+  where
+    camelToSnake :: String -> String
+    camelToSnake [] = []
+    camelToSnake (x:xs) = toLower x : go xs
+
+    go :: String -> String
+    go [] = []
+    go (x:xs)
+      | isUpper x = '_' : toLower x : go xs
+      | otherwise = x : go xs
+
+-- | Aeson options using our field label modifier
+jsonOptions :: Options
+jsonOptions = defaultOptions { fieldLabelModifier = stripPrefixSnakeCase }
+
+-- | OpenAPI schema options matching our Aeson options
+schemaOptions :: SchemaOptions
+schemaOptions = fromAesonOptions jsonOptions
 
 
 -- ════════════════════════════════════════════════════════════════════════════════
@@ -73,21 +108,24 @@ data ErrorResp = ErrorResp
   } deriving (Show, Eq, Generic)
 
 instance ToJSON ErrorResp where
-  toJSON ErrorResp{..} = object
-    [ "error" .= errError
-    , "message" .= errMessage
-    ]
-instance FromJSON ErrorResp
-instance ToSchema ErrorResp
+  toJSON = genericToJSON jsonOptions
+instance FromJSON ErrorResp where
+  parseJSON = genericParseJSON jsonOptions
+instance ToSchema ErrorResp where
+  declareNamedSchema = genericDeclareNamedSchema schemaOptions
 
 data SuccessResp = SuccessResp
   { srStatus :: !Text
   } deriving (Show, Eq, Generic)
 
 instance ToJSON SuccessResp where
-  toJSON SuccessResp{..} = object ["status" .= srStatus]
-instance FromJSON SuccessResp
-instance ToSchema SuccessResp
+  toJSON = genericToJSON jsonOptions
+instance FromJSON SuccessResp where
+  parseJSON = genericParseJSON jsonOptions
+instance ToSchema SuccessResp where
+  declareNamedSchema = genericDeclareNamedSchema schemaOptions
+
+
 
 
 -- ════════════════════════════════════════════════════════════════════════════════
@@ -99,11 +137,11 @@ data CreateWorkspaceReq = CreateWorkspaceReq
   } deriving (Show, Eq, Generic)
 
 instance ToJSON CreateWorkspaceReq where
-  toJSON CreateWorkspaceReq{..} = object ["workspace_id" .= cwrWorkspaceId]
+  toJSON = genericToJSON jsonOptions
 instance FromJSON CreateWorkspaceReq where
-  parseJSON = withObject "CreateWorkspaceReq" $ \v ->
-    CreateWorkspaceReq <$> v .:? "workspace_id"
-instance ToSchema CreateWorkspaceReq
+  parseJSON = genericParseJSON jsonOptions
+instance ToSchema CreateWorkspaceReq where
+  declareNamedSchema = genericDeclareNamedSchema schemaOptions
 
 data WorkspaceResp = WorkspaceResp
   { wrId   :: !Text
@@ -111,18 +149,22 @@ data WorkspaceResp = WorkspaceResp
   } deriving (Show, Eq, Generic)
 
 instance ToJSON WorkspaceResp where
-  toJSON WorkspaceResp{..} = object ["id" .= wrId, "path" .= wrPath]
-instance FromJSON WorkspaceResp
-instance ToSchema WorkspaceResp
+  toJSON = genericToJSON jsonOptions
+instance FromJSON WorkspaceResp where
+  parseJSON = genericParseJSON jsonOptions
+instance ToSchema WorkspaceResp where
+  declareNamedSchema = genericDeclareNamedSchema schemaOptions
 
 data ListWorkspacesResp = ListWorkspacesResp
   { lwrWorkspaces :: ![WorkspaceResp]
   } deriving (Show, Eq, Generic)
 
 instance ToJSON ListWorkspacesResp where
-  toJSON ListWorkspacesResp{..} = object ["workspaces" .= lwrWorkspaces]
-instance FromJSON ListWorkspacesResp
-instance ToSchema ListWorkspacesResp
+  toJSON = genericToJSON jsonOptions
+instance FromJSON ListWorkspacesResp where
+  parseJSON = genericParseJSON jsonOptions
+instance ToSchema ListWorkspacesResp where
+  declareNamedSchema = genericDeclareNamedSchema schemaOptions
 
 
 -- ════════════════════════════════════════════════════════════════════════════════
@@ -136,17 +178,11 @@ data WriteFileReq = WriteFileReq
   } deriving (Show, Eq, Generic)
 
 instance ToJSON WriteFileReq where
-  toJSON WriteFileReq{..} = object
-    [ "workspace_id" .= wfrWorkspaceId
-    , "path" .= wfrPath
-    , "content" .= wfrContent
-    ]
+  toJSON = genericToJSON jsonOptions
 instance FromJSON WriteFileReq where
-  parseJSON = withObject "WriteFileReq" $ \v -> WriteFileReq
-    <$> v .: "workspace_id"
-    <*> v .: "path"
-    <*> v .: "content"
-instance ToSchema WriteFileReq
+  parseJSON = genericParseJSON jsonOptions
+instance ToSchema WriteFileReq where
+  declareNamedSchema = genericDeclareNamedSchema schemaOptions
 
 data ReadFileReq = ReadFileReq
   { rfrWorkspaceId :: !Text
@@ -154,15 +190,11 @@ data ReadFileReq = ReadFileReq
   } deriving (Show, Eq, Generic)
 
 instance ToJSON ReadFileReq where
-  toJSON ReadFileReq{..} = object
-    [ "workspace_id" .= rfrWorkspaceId
-    , "path" .= rfrPath
-    ]
+  toJSON = genericToJSON jsonOptions
 instance FromJSON ReadFileReq where
-  parseJSON = withObject "ReadFileReq" $ \v -> ReadFileReq
-    <$> v .: "workspace_id"
-    <*> v .: "path"
-instance ToSchema ReadFileReq
+  parseJSON = genericParseJSON jsonOptions
+instance ToSchema ReadFileReq where
+  declareNamedSchema = genericDeclareNamedSchema schemaOptions
 
 data FileContentResp = FileContentResp
   { fcrPath    :: !Text
@@ -170,9 +202,11 @@ data FileContentResp = FileContentResp
   } deriving (Show, Eq, Generic)
 
 instance ToJSON FileContentResp where
-  toJSON FileContentResp{..} = object ["path" .= fcrPath, "content" .= fcrContent]
-instance FromJSON FileContentResp
-instance ToSchema FileContentResp
+  toJSON = genericToJSON jsonOptions
+instance FromJSON FileContentResp where
+  parseJSON = genericParseJSON jsonOptions
+instance ToSchema FileContentResp where
+  declareNamedSchema = genericDeclareNamedSchema schemaOptions
 
 data ListFilesResp = ListFilesResp
   { lfrWorkspaceId :: !Text
@@ -180,12 +214,11 @@ data ListFilesResp = ListFilesResp
   } deriving (Show, Eq, Generic)
 
 instance ToJSON ListFilesResp where
-  toJSON ListFilesResp{..} = object
-    [ "workspace_id" .= lfrWorkspaceId
-    , "files" .= lfrFiles
-    ]
-instance FromJSON ListFilesResp
-instance ToSchema ListFilesResp
+  toJSON = genericToJSON jsonOptions
+instance FromJSON ListFilesResp where
+  parseJSON = genericParseJSON jsonOptions
+instance ToSchema ListFilesResp where
+  declareNamedSchema = genericDeclareNamedSchema schemaOptions
 
 
 -- ════════════════════════════════════════════════════════════════════════════════
@@ -199,17 +232,11 @@ data AstSearchReq = AstSearchReq
   } deriving (Show, Eq, Generic)
 
 instance ToJSON AstSearchReq where
-  toJSON AstSearchReq{..} = object
-    [ "workspace_id" .= asrWorkspaceId
-    , "pattern" .= asrPattern
-    , "language" .= asrLanguage
-    ]
+  toJSON = genericToJSON jsonOptions
 instance FromJSON AstSearchReq where
-  parseJSON = withObject "AstSearchReq" $ \v -> AstSearchReq
-    <$> v .: "workspace_id"
-    <*> v .: "pattern"
-    <*> v .:? "language"
-instance ToSchema AstSearchReq
+  parseJSON = genericParseJSON jsonOptions
+instance ToSchema AstSearchReq where
+  declareNamedSchema = genericDeclareNamedSchema schemaOptions
 
 data AstReplaceReq = AstReplaceReq
   { arrWorkspaceId  :: !Text
@@ -219,19 +246,11 @@ data AstReplaceReq = AstReplaceReq
   } deriving (Show, Eq, Generic)
 
 instance ToJSON AstReplaceReq where
-  toJSON AstReplaceReq{..} = object
-    [ "workspace_id" .= arrWorkspaceId
-    , "pattern" .= arrPattern
-    , "replacement" .= arrReplacement
-    , "language" .= arrLanguage
-    ]
+  toJSON = genericToJSON jsonOptions
 instance FromJSON AstReplaceReq where
-  parseJSON = withObject "AstReplaceReq" $ \v -> AstReplaceReq
-    <$> v .: "workspace_id"
-    <*> v .: "pattern"
-    <*> v .: "replacement"
-    <*> v .:? "language"
-instance ToSchema AstReplaceReq
+  parseJSON = genericParseJSON jsonOptions
+instance ToSchema AstReplaceReq where
+  declareNamedSchema = genericDeclareNamedSchema schemaOptions
 
 data AstMatchResp = AstMatchResp
   { amrFile        :: !Text
@@ -242,15 +261,11 @@ data AstMatchResp = AstMatchResp
   } deriving (Show, Eq, Generic)
 
 instance ToJSON AstMatchResp where
-  toJSON AstMatchResp{..} = object
-    [ "file" .= amrFile
-    , "line" .= amrLine
-    , "column" .= amrColumn
-    , "text" .= amrText
-    , "replacement" .= amrReplacement
-    ]
-instance FromJSON AstMatchResp
-instance ToSchema AstMatchResp
+  toJSON = genericToJSON jsonOptions
+instance FromJSON AstMatchResp where
+  parseJSON = genericParseJSON jsonOptions
+instance ToSchema AstMatchResp where
+  declareNamedSchema = genericDeclareNamedSchema schemaOptions
 
 data AstSearchResp = AstSearchResp
   { asrMatches :: ![AstMatchResp]
@@ -258,9 +273,11 @@ data AstSearchResp = AstSearchResp
   } deriving (Show, Eq, Generic)
 
 instance ToJSON AstSearchResp where
-  toJSON AstSearchResp{..} = object ["matches" .= asrMatches, "count" .= asrCount]
-instance FromJSON AstSearchResp
-instance ToSchema AstSearchResp
+  toJSON = genericToJSON jsonOptions
+instance FromJSON AstSearchResp where
+  parseJSON = genericParseJSON jsonOptions
+instance ToSchema AstSearchResp where
+  declareNamedSchema = genericDeclareNamedSchema schemaOptions
 
 data AstReplaceResp = AstReplaceResp
   { arrMatches       :: ![AstMatchResp]
@@ -268,12 +285,11 @@ data AstReplaceResp = AstReplaceResp
   } deriving (Show, Eq, Generic)
 
 instance ToJSON AstReplaceResp where
-  toJSON AstReplaceResp{..} = object
-    [ "matches" .= arrMatches
-    , "files_modified" .= arrFilesModified
-    ]
-instance FromJSON AstReplaceResp
-instance ToSchema AstReplaceResp
+  toJSON = genericToJSON jsonOptions
+instance FromJSON AstReplaceResp where
+  parseJSON = genericParseJSON jsonOptions
+instance ToSchema AstReplaceResp where
+  declareNamedSchema = genericDeclareNamedSchema schemaOptions
 
 
 -- ════════════════════════════════════════════════════════════════════════════════
@@ -286,15 +302,11 @@ data CompileReq = CompileReq
   } deriving (Show, Eq, Generic)
 
 instance ToJSON CompileReq where
-  toJSON CompileReq{..} = object
-    [ "workspace_id" .= crWorkspaceId
-    , "path" .= crPath
-    ]
+  toJSON = genericToJSON jsonOptions
 instance FromJSON CompileReq where
-  parseJSON = withObject "CompileReq" $ \v -> CompileReq
-    <$> v .: "workspace_id"
-    <*> v .: "path"
-instance ToSchema CompileReq
+  parseJSON = genericParseJSON jsonOptions
+instance ToSchema CompileReq where
+  declareNamedSchema = genericDeclareNamedSchema schemaOptions
 
 data CompileResp = CompileResp
   { cpSuccess   :: !Bool
@@ -305,15 +317,11 @@ data CompileResp = CompileResp
   } deriving (Show, Eq, Generic)
 
 instance ToJSON CompileResp where
-  toJSON CompileResp{..} = object
-    [ "success" .= cpSuccess
-    , "language" .= cpLanguage
-    , "stdout" .= cpStdout
-    , "stderr" .= cpStderr
-    , "exit_code" .= cpExitCode
-    ]
-instance FromJSON CompileResp
-instance ToSchema CompileResp
+  toJSON = genericToJSON jsonOptions
+instance FromJSON CompileResp where
+  parseJSON = genericParseJSON jsonOptions
+instance ToSchema CompileResp where
+  declareNamedSchema = genericDeclareNamedSchema schemaOptions
 
 
 -- ════════════════════════════════════════════════════════════════════════════════
@@ -327,13 +335,11 @@ data IdentityResp = IdentityResp
   } deriving (Show, Eq, Generic)
 
 instance ToJSON IdentityResp where
-  toJSON IdentityResp{..} = object
-    [ "fingerprint" .= irFingerprint
-    , "did" .= irDid
-    , "public_key" .= irPublicKey
-    ]
-instance FromJSON IdentityResp
-instance ToSchema IdentityResp
+  toJSON = genericToJSON jsonOptions
+instance FromJSON IdentityResp where
+  parseJSON = genericParseJSON jsonOptions
+instance ToSchema IdentityResp where
+  declareNamedSchema = genericDeclareNamedSchema schemaOptions
 
 
 -- ════════════════════════════════════════════════════════════════════════════════
@@ -347,17 +353,11 @@ data CoeffectsReq = CoeffectsReq
   } deriving (Show, Eq, Generic)
 
 instance ToJSON CoeffectsReq where
-  toJSON CoeffectsReq{..} = object
-    [ "filesystem" .= crqFilesystem
-    , "network" .= crqNetwork
-    , "gpu" .= crqGpu
-    ]
+  toJSON = genericToJSON jsonOptions
 instance FromJSON CoeffectsReq where
-  parseJSON = withObject "CoeffectsReq" $ \v -> CoeffectsReq
-    <$> v .:? "filesystem"
-    <*> v .:? "network"
-    <*> v .:? "gpu"
-instance ToSchema CoeffectsReq
+  parseJSON = genericParseJSON jsonOptions
+instance ToSchema CoeffectsReq where
+  declareNamedSchema = genericDeclareNamedSchema schemaOptions
 
 data CreateAttestationReq = CreateAttestationReq
   { carAttestType :: !Text
@@ -368,21 +368,11 @@ data CreateAttestationReq = CreateAttestationReq
   } deriving (Show, Eq, Generic)
 
 instance ToJSON CreateAttestationReq where
-  toJSON CreateAttestationReq{..} = object
-    [ "attest_type" .= carAttestType
-    , "context" .= carContext
-    , "thought" .= carThought
-    , "action" .= carAction
-    , "coeffects" .= carCoeffects
-    ]
+  toJSON = genericToJSON jsonOptions
 instance FromJSON CreateAttestationReq where
-  parseJSON = withObject "CreateAttestationReq" $ \v -> CreateAttestationReq
-    <$> v .: "attest_type"
-    <*> v .: "context"
-    <*> v .:? "thought"
-    <*> v .:? "action"
-    <*> v .:? "coeffects"
-instance ToSchema CreateAttestationReq
+  parseJSON = genericParseJSON jsonOptions
+instance ToSchema CreateAttestationReq where
+  declareNamedSchema = genericDeclareNamedSchema schemaOptions
 
 data SignatureResp = SignatureResp
   { sigStatus :: !Text
@@ -391,13 +381,11 @@ data SignatureResp = SignatureResp
   } deriving (Show, Eq, Generic)
 
 instance ToJSON SignatureResp where
-  toJSON SignatureResp{..} = object
-    [ "status" .= sigStatus
-    , "signer" .= sigSigner
-    , "reason" .= sigReason
-    ]
-instance FromJSON SignatureResp
-instance ToSchema SignatureResp
+  toJSON = genericToJSON jsonOptions
+instance FromJSON SignatureResp where
+  parseJSON = genericParseJSON jsonOptions
+instance ToSchema SignatureResp where
+  declareNamedSchema = genericDeclareNamedSchema schemaOptions
 
 data AttestationResp = AttestationResp
   { atrCommit     :: !Text
@@ -411,18 +399,11 @@ data AttestationResp = AttestationResp
   } deriving (Show, Eq, Generic)
 
 instance ToJSON AttestationResp where
-  toJSON AttestationResp{..} = object
-    [ "commit" .= atrCommit
-    , "timestamp" .= atrTimestamp
-    , "attest_type" .= atrAttestType
-    , "context" .= atrContext
-    , "thought" .= atrThought
-    , "action" .= atrAction
-    , "coeffects" .= atrCoeffects
-    , "signature" .= atrSignature
-    ]
-instance FromJSON AttestationResp
-instance ToSchema AttestationResp
+  toJSON = genericToJSON jsonOptions
+instance FromJSON AttestationResp where
+  parseJSON = genericParseJSON jsonOptions
+instance ToSchema AttestationResp where
+  declareNamedSchema = genericDeclareNamedSchema schemaOptions
 
 data AttestationLogResp = AttestationLogResp
   { alrAttestations :: ![AttestationResp]
@@ -430,12 +411,11 @@ data AttestationLogResp = AttestationLogResp
   } deriving (Show, Eq, Generic)
 
 instance ToJSON AttestationLogResp where
-  toJSON AttestationLogResp{..} = object
-    [ "attestations" .= alrAttestations
-    , "count" .= alrCount
-    ]
-instance FromJSON AttestationLogResp
-instance ToSchema AttestationLogResp
+  toJSON = genericToJSON jsonOptions
+instance FromJSON AttestationLogResp where
+  parseJSON = genericParseJSON jsonOptions
+instance ToSchema AttestationLogResp where
+  declareNamedSchema = genericDeclareNamedSchema schemaOptions
 
 
 -- ════════════════════════════════════════════════════════════════════════════════
@@ -449,13 +429,11 @@ data SearchResult = SearchResult
   } deriving (Show, Eq, Generic)
 
 instance ToJSON SearchResult where
-  toJSON SearchResult{..} = object
-    [ "title" .= srtTitle
-    , "url" .= srtUrl
-    , "content" .= srtContent
-    ]
-instance FromJSON SearchResult
-instance ToSchema SearchResult
+  toJSON = genericToJSON jsonOptions
+instance FromJSON SearchResult where
+  parseJSON = genericParseJSON jsonOptions
+instance ToSchema SearchResult where
+  declareNamedSchema = genericDeclareNamedSchema schemaOptions
 
 data SearchResp = SearchResp
   { srchStatus  :: !Text
@@ -465,14 +443,11 @@ data SearchResp = SearchResp
   } deriving (Show, Eq, Generic)
 
 instance ToJSON SearchResp where
-  toJSON SearchResp{..} = object
-    [ "status" .= srchStatus
-    , "query" .= srchQuery
-    , "results" .= srchResults
-    , "error" .= srchError
-    ]
-instance FromJSON SearchResp
-instance ToSchema SearchResp
+  toJSON = genericToJSON jsonOptions
+instance FromJSON SearchResp where
+  parseJSON = genericParseJSON jsonOptions
+instance ToSchema SearchResp where
+  declareNamedSchema = genericDeclareNamedSchema schemaOptions
 
 data ReadUrlResp = ReadUrlResp
   { rurStatus  :: !Text
@@ -483,15 +458,11 @@ data ReadUrlResp = ReadUrlResp
   } deriving (Show, Eq, Generic)
 
 instance ToJSON ReadUrlResp where
-  toJSON ReadUrlResp{..} = object
-    [ "status" .= rurStatus
-    , "url" .= rurUrl
-    , "title" .= rurTitle
-    , "content" .= rurContent
-    , "error" .= rurError
-    ]
-instance FromJSON ReadUrlResp
-instance ToSchema ReadUrlResp
+  toJSON = genericToJSON jsonOptions
+instance FromJSON ReadUrlResp where
+  parseJSON = genericParseJSON jsonOptions
+instance ToSchema ReadUrlResp where
+  declareNamedSchema = genericDeclareNamedSchema schemaOptions
 
 
 -- ════════════════════════════════════════════════════════════════════════════════
@@ -505,12 +476,11 @@ data DigestResp = DigestResp
   } deriving (Show, Eq, Generic)
 
 instance ToJSON DigestResp where
-  toJSON DigestResp{..} = object
-    [ "hash" .= drHash
-    , "size" .= drSize
-    ]
-instance FromJSON DigestResp
-instance ToSchema DigestResp
+  toJSON = genericToJSON jsonOptions
+instance FromJSON DigestResp where
+  parseJSON = genericParseJSON jsonOptions
+instance ToSchema DigestResp where
+  declareNamedSchema = genericDeclareNamedSchema schemaOptions
 
 -- | Request to upload a blob
 data PutBlobReq = PutBlobReq
@@ -518,11 +488,11 @@ data PutBlobReq = PutBlobReq
   } deriving (Show, Eq, Generic)
 
 instance ToJSON PutBlobReq where
-  toJSON PutBlobReq{..} = object ["content" .= pbrContent]
+  toJSON = genericToJSON jsonOptions
 instance FromJSON PutBlobReq where
-  parseJSON = withObject "PutBlobReq" $ \v ->
-    PutBlobReq <$> v .: "content"
-instance ToSchema PutBlobReq
+  parseJSON = genericParseJSON jsonOptions
+instance ToSchema PutBlobReq where
+  declareNamedSchema = genericDeclareNamedSchema schemaOptions
 
 -- | Response from putting a blob
 data PutBlobResp = PutBlobResp
@@ -531,12 +501,11 @@ data PutBlobResp = PutBlobResp
   } deriving (Show, Eq, Generic)
 
 instance ToJSON PutBlobResp where
-  toJSON PutBlobResp{..} = object
-    [ "digest" .= pbrDigest
-    , "status" .= pbrStatus
-    ]
-instance FromJSON PutBlobResp
-instance ToSchema PutBlobResp
+  toJSON = genericToJSON jsonOptions
+instance FromJSON PutBlobResp where
+  parseJSON = genericParseJSON jsonOptions
+instance ToSchema PutBlobResp where
+  declareNamedSchema = genericDeclareNamedSchema schemaOptions
 
 -- | Response from getting a blob
 data GetBlobResp = GetBlobResp
@@ -546,13 +515,11 @@ data GetBlobResp = GetBlobResp
   } deriving (Show, Eq, Generic)
 
 instance ToJSON GetBlobResp where
-  toJSON GetBlobResp{..} = object
-    [ "content" .= gbrContent
-    , "digest" .= gbrDigest
-    , "status" .= gbrStatus
-    ]
-instance FromJSON GetBlobResp
-instance ToSchema GetBlobResp
+  toJSON = genericToJSON jsonOptions
+instance FromJSON GetBlobResp where
+  parseJSON = genericParseJSON jsonOptions
+instance ToSchema GetBlobResp where
+  declareNamedSchema = genericDeclareNamedSchema schemaOptions
 
 -- | CAS store info
 data CASInfoResp = CASInfoResp
@@ -562,10 +529,11 @@ data CASInfoResp = CASInfoResp
   } deriving (Show, Eq, Generic)
 
 instance ToJSON CASInfoResp where
-  toJSON CASInfoResp{..} = object
-    [ "data_dir" .= cirDataDir
-    , "blob_count" .= cirBlobCount
-    , "nativelink" .= cirNativelink
-    ]
-instance FromJSON CASInfoResp
-instance ToSchema CASInfoResp
+  toJSON = genericToJSON jsonOptions
+instance FromJSON CASInfoResp where
+  parseJSON = genericParseJSON jsonOptions
+instance ToSchema CASInfoResp where
+  declareNamedSchema = genericDeclareNamedSchema schemaOptions
+
+
+

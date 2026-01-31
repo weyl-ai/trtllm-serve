@@ -20,6 +20,7 @@ module API
   , IdentityAPI
   , ToolsAPI
   , CASAPI
+  , BoxAPI
   , HealthAPI
   , HealthAPIWithSpec
     -- * Response types defined here
@@ -133,6 +134,18 @@ type CASAPI = "cas" :>
 
 
 -- ════════════════════════════════════════════════════════════════════════════════
+-- Box Drawing API
+-- Dialed once, the result is saved.
+-- ════════════════════════════════════════════════════════════════════════════════
+
+type BoxAPI = "box" :>
+  (    "table" :> ReqBody '[JSON] BoxTableReq :> Post '[JSON] BoxResp
+  :<|> "frame" :> ReqBody '[JSON] BoxFrameReq :> Post '[JSON] BoxResp
+  :<|> "tree"  :> ReqBody '[JSON] BoxTreeReq  :> Post '[JSON] BoxResp
+  )
+
+
+-- ════════════════════════════════════════════════════════════════════════════════
 -- Coeffects Manifest
 -- ════════════════════════════════════════════════════════════════════════════════
 
@@ -161,6 +174,7 @@ type ToolServerAPI =
   :<|> IdentityAPI 
   :<|> ToolsAPI
   :<|> CASAPI
+  :<|> BoxAPI
   :<|> CoeffectsAPI
 
 -- | Full API including the openapi.json endpoint (for serving)
@@ -170,6 +184,7 @@ type ToolServerAPIFull =
   :<|> IdentityAPI
   :<|> ToolsAPI
   :<|> CASAPI
+  :<|> BoxAPI
   :<|> CoeffectsAPI
 
 toolServerAPI :: Proxy ToolServerAPI

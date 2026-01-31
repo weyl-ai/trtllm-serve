@@ -51,6 +51,7 @@ library
   hs-source-dirs:   lib
   exposed-modules:
     Attestation
+    Box
     CAS
     CodeSandbox
   build-depends:

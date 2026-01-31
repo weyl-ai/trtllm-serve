@@ -54,6 +54,12 @@ module API.Types
   , PutBlobResp(..)
   , GetBlobResp(..)
   , CASInfoResp(..)
+    -- * Box API
+  , BoxTableReq(..)
+  , BoxFrameReq(..)
+  , BoxTreeReq(..)
+  , BoxTreeNodeReq(..)
+  , BoxResp(..)
 
     -- * Common
   , ErrorResp(..)
@@ -535,5 +541,77 @@ instance FromJSON CASInfoResp where
 instance ToSchema CASInfoResp where
   declareNamedSchema = genericDeclareNamedSchema schemaOptions
 
+
+-- ════════════════════════════════════════════════════════════════════════════════
+-- Box Drawing API Types
+-- Dialed once, the result is saved.
+-- ════════════════════════════════════════════════════════════════════════════════
+
+-- | Request to render a table
+data BoxTableReq = BoxTableReq
+  { btrHeaders :: ![Text]
+  , btrRows    :: ![[Text]]
+  , btrStyle   :: !(Maybe Text)  -- ^ "single" (default), "double", "rounded"
+  } deriving (Show, Eq, Generic)
+
+instance ToJSON BoxTableReq where
+  toJSON = genericToJSON jsonOptions
+instance FromJSON BoxTableReq where
+  parseJSON = genericParseJSON jsonOptions
+instance ToSchema BoxTableReq where
+  declareNamedSchema = genericDeclareNamedSchema schemaOptions
+
+-- | Request to render a frame
+data BoxFrameReq = BoxFrameReq
+  { bfrTitle   :: !(Maybe Text)
+  , bfrContent :: !Text
+  , bfrWidth   :: !(Maybe Int)
+  , bfrStyle   :: !(Maybe Text)  -- ^ "single" (default), "double", "rounded"
+  } deriving (Show, Eq, Generic)
+
+instance ToJSON BoxFrameReq where
+  toJSON = genericToJSON jsonOptions
+instance FromJSON BoxFrameReq where
+  parseJSON = genericParseJSON jsonOptions
+instance ToSchema BoxFrameReq where
+  declareNamedSchema = genericDeclareNamedSchema schemaOptions
+
+-- | Tree node for recursive tree structure
+data BoxTreeNodeReq = BoxTreeNodeReq
+  { btnLabel    :: !Text
+  , btnChildren :: ![BoxTreeNodeReq]
+  } deriving (Show, Eq, Generic)
+
+instance ToJSON BoxTreeNodeReq where
+  toJSON = genericToJSON jsonOptions
+instance FromJSON BoxTreeNodeReq where
+  parseJSON = genericParseJSON jsonOptions
+instance ToSchema BoxTreeNodeReq where
+  declareNamedSchema = genericDeclareNamedSchema schemaOptions
+
+-- | Request to render a tree
+data BoxTreeReq = BoxTreeReq
+  { btqRoot     :: !Text
+  , btqChildren :: ![BoxTreeNodeReq]
+  } deriving (Show, Eq, Generic)
+
+instance ToJSON BoxTreeReq where
+  toJSON = genericToJSON jsonOptions
+instance FromJSON BoxTreeReq where
+  parseJSON = genericParseJSON jsonOptions
+instance ToSchema BoxTreeReq where
+  declareNamedSchema = genericDeclareNamedSchema schemaOptions
+
+-- | Box rendering response
+data BoxResp = BoxResp
+  { brRendered :: !Text
+  } deriving (Show, Eq, Generic)
+
+instance ToJSON BoxResp where
+  toJSON = genericToJSON jsonOptions
+instance FromJSON BoxResp where
+  parseJSON = genericParseJSON jsonOptions
+instance ToSchema BoxResp where
+  declareNamedSchema = genericDeclareNamedSchema schemaOptions
 
 

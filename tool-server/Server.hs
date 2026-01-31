@@ -29,6 +29,7 @@ import System.IO (hFlush, stdout, stderr, hPutStrLn)
 import Text.Read (readMaybe)
 
 import API (ToolServerAPIFull, toolServerAPIFull, openApiSpec, HealthResp(..), CoeffectsManifest(..))
+import qualified Box
 import API.Types
 import qualified CodeSandbox as CS
 import qualified Attestation as AT
@@ -376,6 +377,39 @@ digestToResp d = DigestResp (CAS.digestHash d) (CAS.digestSize d)
 
 
 -- ════════════════════════════════════════════════════════════════════════════════
+-- Box Handlers - Pure, No IO, The Result Is Saved
+-- ════════════════════════════════════════════════════════════════════════════════
+
+boxTableHandler :: BoxTableReq -> Handler BoxResp
+boxTableHandler BoxTableReq{..} = do
+  let style = parseBoxStyle btrStyle
+      tableData = Box.TableData btrHeaders btrRows style
+  pure $ BoxResp (Box.renderTable tableData)
+
+boxFrameHandler :: BoxFrameReq -> Handler BoxResp
+boxFrameHandler BoxFrameReq{..} = do
+  let style = parseBoxStyle bfrStyle
+      frameData = Box.FrameData bfrTitle bfrContent bfrWidth style
+  pure $ BoxResp (Box.renderFrame frameData)
+
+boxTreeHandler :: BoxTreeReq -> Handler BoxResp
+boxTreeHandler BoxTreeReq{..} = do
+  let tree = Box.TreeNode btqRoot (map convertTreeNode btqChildren)
+  pure $ BoxResp (Box.renderTree tree)
+
+parseBoxStyle :: Maybe Text -> Box.BoxStyle
+parseBoxStyle Nothing = Box.Single
+parseBoxStyle (Just t) = case T.toLower t of
+  "double"  -> Box.Double
+  "rounded" -> Box.Rounded
+  _         -> Box.Single
+
+convertTreeNode :: BoxTreeNodeReq -> Box.TreeNode
+convertTreeNode BoxTreeNodeReq{..} = 
+  Box.TreeNode btnLabel (map convertTreeNode btnChildren)
+
+
+-- ════════════════════════════════════════════════════════════════════════════════
 -- Server
 -- ════════════════════════════════════════════════════════════════════════════════
 
@@ -407,6 +441,10 @@ server state =
    :<|> casPutBlobHandler state
    :<|> casGetBlobHandler state
    :<|> casExistsHandler state)
+       -- Box (pure, no state needed)
+  :<|> (boxTableHandler
+   :<|> boxFrameHandler
+   :<|> boxTreeHandler)
        -- Coeffects
   :<|> coeffectsManifestHandler
 
